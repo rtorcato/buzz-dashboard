@@ -6,4 +6,6 @@ allowBuilds:
   esbuild: false
   sharp: false
   unrs-resolver: false
+minimumReleaseAgeExclude:
+  - '@rtorcato/react-common@1.0.0-beta.2'
 verifyDepsBeforeRun: install

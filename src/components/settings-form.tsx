@@ -1,5 +1,6 @@
 "use client";
 
+import { useHasMounted, useTheme } from "@rtorcato/react-common";
 import {
   Eye,
   EyeOff,
@@ -11,7 +12,6 @@ import {
   Search,
   Sun,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { Avatar } from "@/components/agents-view";
 import {
@@ -147,8 +147,7 @@ function Row({
 function ThemeChoice() {
   const { theme, setTheme } = useTheme();
   // next-themes only knows the stored theme once mounted.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useHasMounted();
   return (
     <Choice
       label="Theme"

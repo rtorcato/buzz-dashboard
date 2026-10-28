@@ -1,23 +1,18 @@
 "use client";
 
-import { copyToClipboard } from "@rtorcato/browser-common/clipboard";
+import { useCopy } from "@rtorcato/react-common";
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 export function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopy(1500);
   return (
     <Button
       variant="outline"
       size="icon"
       className="size-9"
       aria-label={copied ? "Copied" : label}
-      onClick={async () => {
-        if (!(await copyToClipboard(value))) return;
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
+      onClick={() => copy(value)}
     >
       {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
     </Button>
