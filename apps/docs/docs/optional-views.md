@@ -5,11 +5,11 @@ sidebar_position: 4
 
 # Optional views
 
-The relay is the only required source. GitHub and R2 each add views, and each fails on its own: when one is missing or down, an alert names it and the rest of the app keeps working.
+The relay is the only required source. GitHub, R2 and Postgres each add views, and each fails on its own: when one is missing or down, an alert names it and the rest of the app keeps working.
 
 ## GitHub
 
-`GITHUB_TOKEN` feeds the Pipeline and Releases views and the GitHub rows of the Needs-you card: open claims, `merge-ready` pull requests, blocked issues, red CI on `main` and releases waiting for approval.
+`GITHUB_TOKEN` feeds the GitHub events on Timeline, the pull requests the history store keeps for Pipeline Flow, and the `merge-ready` row of the Needs-you card.
 
 Create a **fine-grained personal access token** with read-only access and nothing else:
 
@@ -79,3 +79,14 @@ Runtime state and usage meters come from one JSON file, `hive/status.json`, in t
 - The feed is **stale** when `published_at` is more than 10 minutes old. Stale data is still shown, with its age.
 
 The feed is optional. Without it the dashboard still runs, and the runtime row says "not reported".
+
+## History store
+
+`DATABASE_URL` points the dashboard at a Postgres database it can own, e.g. `postgres://hive:hive@127.0.0.1:5432/hive`. It feeds:
+
+- **Health** and **Cost**, which only appear with it,
+- the **Flow** tab of Pipeline,
+- search, filters and ranges up to 90 days on **Timeline**,
+- [Alerts](./alerts.md) and snoozing Needs-you rows.
+
+On start the server applies its migrations, then stores GitHub and Buzz events every minute and deletes those older than `HISTORY_RETENTION_DAYS` (90 by default). Without `DATABASE_URL` the dashboard stays live-only and never opens a connection. Health and Cost also need a [cost source](./cost-source.md).
