@@ -54,6 +54,15 @@ See [Optional views](./optional-views.md#github) for the permissions the token n
 
 All five must be set together. If any is missing the Media tab shows a "Can't reach" alert, and the status feed is treated as not reported. See [Optional views](./optional-views.md#media-and-the-status-feed).
 
+## History store (optional)
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres URL of the history store, e.g. `postgres://hive:hive@127.0.0.1:5432/hive`. Unset keeps the live-only dashboard, with Health, Cost, Pipeline Flow and Alerts hidden. |
+| `HISTORY_RETENTION_DAYS` | Days of history to keep. Defaults to 90. |
+
+See [Optional views](./optional-views.md#history-store).
+
 ## Display (optional)
 
 | Variable | Purpose |

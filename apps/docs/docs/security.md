@@ -48,7 +48,7 @@ services:
       - traefik.http.routers.buzz-dashboard.rule=Host(`dashboard.example.com`)
       - traefik.http.routers.buzz-dashboard.entrypoints=websecure
       - traefik.http.routers.buzz-dashboard.tls=true
-      # The dashboard has no login. Attach your auth middleware here.
+      # The views have no login. Attach your auth middleware here.
       - traefik.http.routers.buzz-dashboard.middlewares=<your-auth>@file
       - traefik.http.services.buzz-dashboard.loadbalancer.server.port=3000
 

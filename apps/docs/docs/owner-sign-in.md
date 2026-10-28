@@ -5,7 +5,7 @@ sidebar_position: 6
 
 # Owner sign-in
 
-The views are read-only and stay open to anyone who can reach the dashboard, so keep it behind your own access layer (see [Security](./security.md)). Sign-in only matters for the dashboard's own state, and only the owner can change that: snoozing and acknowledging Needs-you items, alert channels and rules, custom Pipeline stages, and the cost source. Signed out, the same controls are shown read-only.
+The views are read-only and stay open to anyone who can reach the dashboard, so keep it behind your own access layer (see [Security](./security.md)). Sign-in only matters for the dashboard's own state, and only the owner can change that: snoozing and acknowledging Needs-you items, alert channels and rules, and the cost source. Signed out, the same controls are shown read-only.
 
 There are no passwords and no stored keys. A signed-in owner gets a session cookie that is `httpOnly`, `SameSite=Lax`, `Secure` over HTTPS, signed by the server and valid for 7 days.
 
