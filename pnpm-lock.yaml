@@ -26,6 +26,9 @@ importers:
       '@rtorcato/js-common':
         specifier: ^6.0.1
         version: 6.0.1(@inquirer/prompts@8.7.4(@types/node@20.19.43))(chalk@6.0.1)(commander@15.0.0)(zod@4.6.7)
+      '@rtorcato/react-common':
+        specifier: 1.0.0-beta.2
+        version: 1.0.0-beta.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       aws4fetch:
         specifier: ^1.0.20
         version: 1.0.20
@@ -47,9 +50,6 @@ importers:
       next:
         specifier: 16.4.1
         version: 16.4.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/node@20.19.43)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      next-themes:
-        specifier: ^0.4.6
-        version: 0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       nostr-tools:
         specifier: ^2.25.2
         version: 2.25.2(typescript@5.9.3)
@@ -2814,6 +2814,20 @@ packages:
       uuid:
         optional: true
       zod:
+        optional: true
+
+  '@rtorcato/react-common@1.0.0-beta.2':
+    resolution: {integrity: sha512-mB1eqHc1TFeBHBjMcjPxXwHex58YaGeIMP9WY6nE0nGakPGNE7xu6DH6AlKyMUyRDGg6IS2VarrHe+8bhoNrbQ==}
+    engines: {node: '>=24'}
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: ^19.2.8
+      react-dom: ^19.2.8
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
         optional: true
 
   '@rtorcato/repo-ai@3.9.0':
@@ -7076,6 +7090,9 @@ packages:
     engines: {node: '>=14.0.0'}
     hasBin: true
 
+  tailwind-merge@3.6.0:
+    resolution: {integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==}
+
   tailwindcss@4.3.3:
     resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
 
@@ -10964,6 +10981,18 @@ snapshots:
       chalk: 6.0.1
       commander: 15.0.0
       zod: 4.6.7
+
+  '@rtorcato/react-common@1.0.0-beta.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@rtorcato/browser-common': 3.0.0
+      clsx: 2.1.1
+      next-themes: 0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+      tailwind-merge: 3.6.0
+    optionalDependencies:
+      '@types/react': 19.3.0
+      '@types/react-dom': 19.3.0(@types/react@19.3.0)
 
   '@rtorcato/repo-ai@3.9.0(@types/node@20.19.43)':
     dependencies:
@@ -15571,6 +15600,8 @@ snapshots:
       csso: 5.0.5
       picocolors: 1.1.1
       sax: 1.6.1
+
+  tailwind-merge@3.6.0: {}
 
   tailwindcss@4.3.3: {}
 
