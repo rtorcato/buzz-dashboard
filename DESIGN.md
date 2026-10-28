@@ -68,6 +68,18 @@ The `ViewTabs` pill row goes. Use the stock shadcn `Sidebar` with `collapsible="
 | **Releases** | See Releases (#71). |
 | **Timeline** | Without a database: a `BarChart` of events per hour today (chart-3, with the current hour in chart-1) and 2 stat `Card`s. Then a live-feed `Card` with a `ToggleGroup` type filter and a `Select` for agent. Rows are grouped by hour under sticky headers. A row that needs the owner gets a 5% status tint and a "Needs you" `Badge`. With the history store, see Timeline (#41). |
 
+## Agents on phones (#20)
+
+Below `sm` (640px) only. At `sm` and up the Agents view stays as described above. The view must not scroll sideways anywhere from 360 to 430px, in either theme.
+
+- **Toolbar, row 1:** "Agents" (`text-lg font-semibold`) on the left and the sort `Select` on the right. The trigger keeps its full label ("Sort: needs attention") at `h-11 sm:h-9`. It fits down to 360px, so there's no icon-only trigger and no shortened labels.
+- **Toolbar, row 2:** the filter `fieldset` at full width (`w-full sm:w-auto`). Its 4 buttons share the row (`flex-1 justify-center sm:flex-none`) at `h-11 sm:h-9` and `px-2 sm:px-3`, which gives about 89px each at 390px and 82px at 360px.
+- **Order:** phones show Agents · Sort, then Filter. Desktop keeps Agents · Filter · Sort. One way to get there is a `flex flex-wrap items-center gap-3` row, with the fieldset at `order-last basis-full sm:order-none sm:basis-auto` and the right-hand group at `ml-auto`. The exact classes are the coder's call.
+- **Sort menu:** stock shadcn `SelectContent`, with items at least 44px tall on phones.
+- **Card grid:** `grid-cols-1 md:grid-cols-2 xl:grid-cols-3`. `grid-cols-1` is `minmax(0,1fr)`, so `truncate` lines ellipsize instead of widening the column. The card's `Link` wrapper also gets `min-w-0`.
+- **Unchanged:** the `aria-pressed` buttons inside the `fieldset` and `legend`, the visible `ring` focus, and `aria-label="Sort agents"`.
+- **Screenshots:** after the change, run `pnpm screens` and commit the refreshed `mobile-*` shots.
+
 ## Runtime status (#24)
 
 Each Agents card gets a row between its header and "Working on", in a bordered `rounded-md` box, `text-xs`.
