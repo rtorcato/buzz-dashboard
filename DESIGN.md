@@ -10,6 +10,7 @@ The design spec for buzz-dashboard. Read it before writing any UI code, and keep
 - **Update:** history and alerts (#39 to #47): Timeline with Buzz events, Health, Cost, Alerts, Needs-you snooze and ack, the generic Pipeline flow and the cost chip, approved by rtorcato on 2026-10-23. They all read the optional history store (#39), and anything that saves needs owner sign-in (#40), so build those two first.
 - **Update:** Settings → Sources (#42, #43), approved by rtorcato on 2026-10-23: connected and not-connected states, the owner-signer confirm dialog, an ingest token on the OTel endpoint, one cost source at a time and no log source in v1.
 - **Update:** the Releases view (#71) and the first-run setup wizard (#73), approved by rtorcato on 2026-10-23. The wizard saves to a config store that env always overrides, so build that store first.
+- **Update:** the Toolkit card on the agent page, approved by rtorcato on 2026-11-11. Then on 2026-11-11, admin editing of agents, the sign-in gate with per-hive roles, and the hive switcher. Build them in this order: sign-in and roles, hive config with the switcher, the read-only Toolkit, edit mode, then the apply job. Where Save writes is still open (see Saving).
 - **Mockups:** kept outside the repo and not linked from it. This file is the spec, so build from the text below.
 
 ## Principle
@@ -17,6 +18,8 @@ The design spec for buzz-dashboard. Read it before writing any UI code, and keep
 It's a glanceable ops screen, and it answers one question first: **"does anything need me right now?"** The **Needs you** card sits above every view and is never hidden behind one. Everything else is detail.
 
 The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an outbound link, marked with the `external-link` icon, and the dashboard never posts to the relay or GitHub. The one exception to "never posts" is the opt-in Buzz DM alert channel (#45), which sends only to the owner with a posting key of its own, never the hive's. The other exception is the dashboard's own state, and only for the signed-in owner (#40): snooze and ack, alert channels and rules, custom stages, and the cost source with its ingest token. Signed out, no button writes anything.
+
+**Admins can change agents** (see Editing agents). A hive admin can edit an agent's toolkit and settings, and a save becomes a reviewed, revertable change to the hive's config, never a live write. That is the only write toward the hive. The dashboard still never posts to channels or acts on GitHub, never holds an agent's private key or provider credentials, and viewers can't write anything.
 
 **Without a database** (no `DATABASE_URL`, #39) the dashboard is today's live-only view. Health, Cost and the Pipeline Flow tab leave the sidebar, Timeline shows only the live feed, and Needs you loses its footer, history and snooze/ack. Nothing shows an "add a database" nag.
 
@@ -43,11 +46,11 @@ The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an 
 
 The `ViewTabs` pill row goes. Use the stock shadcn `Sidebar` with `collapsible="icon"`, wrapped in `SidebarProvider` with `SidebarInset` for the page.
 
-- **Top** (`SidebarHeader`): the 32px Hive mark tile, "Hive" (semibold) and "buzz-dashboard" (muted, 12px) under it. It links to `/`.
+- **Top** (`SidebarHeader`): the hive switcher (see Hive switcher). With one hive configured it looks like the old header, the 32px mark tile, the hive name (semibold) and "buzz-dashboard" (muted, 12px), plus `chevrons-up-down`.
 - **Views** (`SidebarGroup` labelled "Views"): Agents, Health, Pipeline, Releases, Timeline, Cost and Media, as `SidebarMenuButton` links with their lucide icons (`bot`, `heart-pulse`, `git-pull-request`, `rocket`, `activity`, `coins`, `images`). The current route gets `isActive`. Health and Cost only appear when the history store is configured (#39).
 - **"new" tag:** for 14 days after a view first appears, it carries a muted, outlined "new" pill in the badge slot, unless it has a count to show. It is decoration, so give it `aria-hidden`.
 - **Counts:** a view that owns Needs-you items shows its count in a `SidebarMenuBadge`, as a red pill (same data as `countsByView`). In light mode the pill text is `red-700` on the `destructive/15` tint (about 4.9:1). Plain `text-destructive` is about 3.6:1 there and fails AA, which also fixes the old tab pills.
-- **Bottom** (`SidebarFooter`): the sign-in block (#40, below), a muted "Read-only" line with the `eye` icon (not a link), then Settings (`settings` icon, `/settings`) as a menu button. When signed in, the line reads "Read-only · snooze and ack".
+- **Bottom** (`SidebarFooter`): the sign-in block (#40, below), a muted "Read-only" line with the `eye` icon (not a link), then Settings (`settings` icon, `/settings`) as a menu button. When signed in, the line shows your role in this hive: "Viewer · read-only" (`eye`) or "Admin · can edit agents" (`shield`).
 - **Sign-in block** (#40), only when sign-in is configured:
   - **Signed out:** an outlined menu button, `key-round` and "Sign in with Nostr" (NIP-07). In proxy-header mode there is no button, since the proxy already signed you in.
   - **Signed in:** a bordered row with a 32px initials `Avatar` (the profile picture when there is one), the name (500) and the truncated npub in mono 12px, then `chevrons-up-down`. In proxy mode the second line reads "via proxy · <the header's user>".
@@ -97,7 +100,7 @@ Each Agents card gets a row between its header and "Working on", in a bordered `
 
 ## Agent page (#27)
 
-The route is `/agents/[name]`, where `name` is the lowercased display name with spaces as hyphens (`/agents/optimus-prime`). Renamed agents redirect from their old name (`/agents/fizz`). The shell (header, Needs you, sidebar) stays, with Agents active in the sidebar. It's still read-only, so every action is an outbound link.
+The route is `/agents/[name]`, where `name` is the lowercased display name with spaces as hyphens (`/agents/optimus-prime`). Renamed agents redirect from their old name (`/agents/fizz`). With more than one hive the route is `/h/<hive>/agents/<name>` (see Hive switcher). The shell (header, Needs you, sidebar) stays, with Agents active in the sidebar. For viewers it's read-only, so every action is an outbound link. Admins also get Edit (see Editing agents).
 
 - **Breadcrumb** (shadcn `Breadcrumb`): "← Agents › Bumble". The back link is a `h-9` target.
 - **Stalled alert:** only when the agent is stopped with open claims. A destructive `Alert` with `power-off`: "Bumble stopped 3h 05m ago while holding 2 claims", then "Restart it from Buzz Desktop, or ask Prime to reassign the claims. This page is read-only."
@@ -116,6 +119,7 @@ The route is `/agents/[name]`, where `name` is the lowercased display name with 
 - **Left column** (2 of 3 at `xl`):
   - **Open claims:** a `Table` of issue (key in mono, title muted under it), label (mono pill: `ai-wip` info, `ai-review` neutral, `ai-changes` warning, `ai-blocked` destructive), progress ("PR #23 · CI green" or "no PR yet"), how long it has been held, and an external link. The count pill is destructive when stalled and muted otherwise. When stalled, the subtitle reads "Held while the runtime is stopped. Nobody is working these." and the ages turn destructive. With no claims, the card shows a dashed "No open claims" box rather than hiding, so the layout doesn't jump.
   - **Activity:** a `BarChart` of messages per day, chart-3 with today in chart-1, plus a `ToggleGroup` for 7d, 14d or 30d.
+  - **Toolkit:** see Toolkit below. It sits between Activity and Messages: it's reference info, so it goes below the live data.
   - **Messages:** the agent's messages, newest first, grouped by day under sticky labels. Each row has the time, a mono `#channel` chip, the text and an external link to the message. A `Select` filters by channel.
 - **Right column:**
   - **Runtime:** a `dl` of State, Stopped at / Since, Last turn, Started and Model (mono), with a footer reading "From the status feed · as of 2m ago". When the agent isn't reported, it shows `circle-help` and "Not reported. The status feed has no runtime for this agent." with no red.
@@ -126,6 +130,79 @@ The route is `/agents/[name]`, where `name` is the lowercased display name with 
   - **Loading:** `Skeleton`s that keep each card's height, hero and stats first.
   - **Unknown name:** a 404 with `user-x`, "No agent called “x”", "It may have been renamed or retired." and an outline "All agents" link.
 - **Phone:** one column. Breadcrumb, then a compact alert, then the hero centred (a 112px avatar above the name, with the buttons as two 44px halves). Then the stats 2×2, then Open claims as a list with chevrons, and after that Runtime, Recent PRs, Activity, Messages, Where they talk and Identity.
+
+### Toolkit
+
+What each agent works with: its skills, MCP servers, CLIs and libraries.
+
+- **Card:** the same `Section` card as the rest of the page. Title "Toolkit" with a muted pill holding the total, and an outline "Profile page `external-link`" on the right, linking to the agent's profile file in the hive's config repo.
+- **Tabs** (shadcn `Tabs`): Skills · MCP · CLIs · Libraries, each with its count. On phones the tabs fill the row at 40px.
+- **Skills and Libraries:** groups under small muted headings, each item a mono chip (`Badge variant="outline"`). A third-party group shows where it came from on one muted line with a `shield-check` in `success`: "emilkowalski/skills @ 715c1807 · reviewed 11 Nov". That line says it was security-reviewed and pinned. A group without a review shows no shield.
+- **MCP:** one row per server: the name in mono, a muted one-line purpose, and a status pill, "Connected" (`success`) or "Not signed in" (`warning`). Status + icon + label, as always.
+- **CLIs:** the name in mono and a one-line purpose.
+- **Footer:** muted "From `agents/<slug>.md` · updated 2h ago".
+- **States** (dashed box, like No open claims, so the layout doesn't jump):
+  - **Nothing listed:** "No toolkit listed for Bumble", then "Add a Toolkit section to `agents/bumble.md`."
+  - **Not reported:** `circle-help` and "Not reported. The status feed has no toolkit for this agent."
+- **Data:** the `toolkit` block in the status feed (see Status feed). MCP status comes from the profile text for now. A live connection check is a later step.
+
+### Editing agents (admins)
+
+Only a hive **admin** (see Sign-in and roles) sees any of this. Viewers get the page as above.
+
+- **Edit button:** an outline "`pencil` Edit" in the hero's button row. In edit mode it becomes ghost "Cancel" and primary "Review and save".
+- **Edit mode:** an amber `warning` "Editing" `Badge` beside the name, and an amber ring (`ring-2 ring-warning/40`) on each editable card: Toolkit and Agent settings. Everything else stays read-only.
+- **Toolkit, editing:** each chip gets an `x` button (`aria-label="Remove animate"`). Each group ends in an "Add…" input that takes a skill name or `owner/repo`, added on Enter. A new third-party skill shows as a dashed amber chip with the hint "Needs a security review before it installs". Saving one asks the security reviewer for a review, so the review rule lives in the form. It doesn't install until that review passes.
+- **Agent settings** (`Card`, admins only, in the right column under Runtime; it gets the amber ring in edit mode): the options the Buzz Desktop app holds today.
+  - Model (`Select`) and Runtime (`Select`).
+  - Parallel turns (number `Input`, 1 to 8).
+  - Responds to (`RadioGroup`): Owner only, Owner + allowlist, Anyone in the channel. With the allowlist option, a tag field of people (`Badge`s with `x`, the same pattern as the setup wizard's tag fields). It shows names but saves pubkeys.
+  - The three timeouts (number `Input`s with a "min" suffix).
+  - Start with the hive (`Switch`).
+  - System prompt: the first lines in mono on `muted`, with an outline "Open editor" that opens a full-height `Sheet` with a mono `Textarea`.
+  - A changed field gets a small amber dot by its label and the old value under it, muted and struck through.
+  - A muted `key-round` line at the bottom: "Keys and provider credentials stay on the hive host. They're never shown or edited here."
+- **Unsaved bar:** a sticky bar at the bottom of the main column while there are changes: "4 unsaved changes", ghost "Discard", primary "Review and save". Leaving the page with changes asks first (`AlertDialog`).
+
+### Saving
+
+Save never writes live. "Review and save" opens a `Dialog` (a full-screen `Sheet` on phones):
+
+- **Diff:** one block per file touched (`config/agents/<slug>-<id>.json`, `agents/<slug>.md`, `<slug>.prompt.md`), the path in mono over a unified diff: removed lines on a 10% `destructive` tint with `-`, added lines on a 10% `success` tint with `+`. The `+`/`-` carry the meaning, not just the colour.
+- **Commit message:** a prefilled `Input`, "Bumble: model to opus, add animate skill", editable.
+- **Restart to apply:** a `Checkbox`, on by default, with the hint "The agent finishes its current turn first."
+- **Buttons:** ghost "Back to editing" and primary "Save".
+- **Where it writes, v1 (approved):** a commit to the hive's config repo (buzz-nest), made as the signed-in admin. A small apply job on the hive host pulls it, writes the agent's config and restarts the agent. Every change has history and a revert, and the dashboard never touches the Desktop app's files or the agents' keys.
+- **Open question for rtorcato:** Buzz 1.0 (block/buzz-app, 10 Nov 2026) keeps each agent's settings and instructions on the relay, as revisions in a private per-agent config channel. If the hive moves to 1.0, Save publishes a new config revision signed with the admin's sign-in key instead of committing, and the apply job goes away. The Review dialog stays the same either way.
+- **After saving:** a `Sonner` toast ("Saved. Bumble restarts after its current turn.") with a link to the commit or revision. The Runtime card then shows the restart as it happens.
+- **Failure:** the dialog stays open with a destructive `Alert` in plain words ("Someone else changed Bumble's config since you opened it. Reload to see their change."). Nothing is lost.
+
+### Sign-in and roles
+
+Every page sits behind sign-in. There is no anonymous view any more. This replaces the optional owner sign-in (#40) as the way in, and the owner is simply the first admin.
+
+- **Sign-in page:** no shell, like `/setup`. A centred `Card`, `max-w-[420px]`: the 48px mark, "Sign in to Hive", muted "Use your Nostr key. It never leaves your signer."
+  - Primary "`key-round` Sign in with extension" (NIP-07).
+  - Outline "`smartphone` Use a phone signer" (NIP-46 nostrconnect), which shows a QR code with the link under it in mono and a copy button.
+  - A `Collapsible` "Paste a bunker:// link" with a mono `Input` and Connect.
+  - Muted footer: "Only people this hive's admins added can get in."
+- **Phones:** "Open my signer app" (the nostrconnect link) is the primary button, at 44px, with the QR code as the fallback. Extension sign-in moves to a link under it.
+- **Waiting:** the clicked button shows a `loader-circle` and "Waiting for your signer…", with Cancel.
+- **Roles are per hive.** Each hive keeps an **admin** list (can edit agents and hive settings) and a **viewer** list (read-only). Both are pubkeys.
+- **No access:** signed in, but on neither list. "No access to this hive", muted "Ask an admin to add you.", your npub in mono with a copy `Button`, and outline "Sign out" and "Switch hive". No data from the hive shows.
+
+### Hive switcher
+
+One dashboard can watch several hives.
+
+- **Trigger:** the top of the sidebar (shadcn's team-switcher pattern): the hive's 32px icon tile, its name (semibold), the relay host (muted, mono, 12px) and `chevrons-up-down`. The icon comes from the relay's NIP-11 info, with initials as the fallback.
+- **Menu** (`DropdownMenu`): a muted "Hives" label, then one row per hive: icon, name, relay in mono, a status dot with a label (Live, Feed stale, Unreachable), the agent count, and a red Needs-you count when there is one. The current hive has a `check`. Each row shows its shortcut, ⌘1 to ⌘9 (Ctrl on other systems), which also work with the menu closed.
+- **After the list:** "`plus` Add a hive" and "`settings` Manage hives" (admins only).
+- **Add a hive** (`Dialog`): name, relay URL (mono), status-feed URL, then the admin and viewer lists as tag fields. Test runs the same relay checks as setup step 3 before Save unlocks.
+- **Routes carry the hive:** `/h/<hive>/…` (`/h/home/agents/jazz`), so shared links open the right hive. With one hive, the plain routes keep working and redirect.
+- **Other hives in Needs you:** one muted line at the bottom of Needs you when another hive needs you or has a stale feed: "Other hives: Staging feed is 2h old · Switch". It isn't counted, so the current hive's count stays honest.
+- **Each hive is separate:** its own relay connection, status feed, config repo and role lists. Nothing from one hive shows in another.
+- **Collapsed rail:** only the icon tile, with a `Tooltip` naming the hive.
 
 ## Status feed (#26)
 
@@ -152,6 +229,7 @@ The runtime and usage data come from one JSON file, object key `hive/status.json
 - `five_h_pause_at` and `seven_d_pause_at` are the % at which each window pauses the hive. Either may be missing: the "Paused for usage" row then leaves out its "(pauses at N%)", and without the 7d one the higher reading is taken as the limit that tripped.
 - The feed is **stale** when `published_at` is more than 10 minutes old. Stale data is still shown, with its age.
 - An agent with no `runtime` entry is **not reported**. Leave out `usage` and there is no "Paused for usage" row; nothing else reads it, since the cost chip (#42) replaced the usage chip.
+- `toolkit` (optional) is keyed by hex pubkey, parsed from each agent's profile file (`agents/<slug>.md`) by the publisher: `{ "source": "agents/bumble.md", "updated_at": "…", "skills": [{ "group": "…", "items": ["…"], "provenance": { "repo": "owner/repo", "ref": "715c1807", "reviewed_at": "2026-11-11" } }], "mcp": [{ "name": "…", "purpose": "…", "status": "connected" }], "clis": [{ "name": "…", "purpose": "…" }], "libraries": [{ "group": "…", "items": ["…"] }] }`. `provenance` is optional, and `status` is `connected` or `signed_out`. No secrets, ever.
 - A failed fetch shows the stale state. It doesn't replace the page with a destructive `Alert`, because the relay and GitHub data still render.
 
 ## History views (#39)
@@ -489,7 +567,7 @@ A `max-w-[1040px]` page: a 240px stepper column, then the step `Card`, with a 40
 
 ## Components
 
-Use stock shadcn/ui only, with no custom components: `Card`, `Badge`, `Table`, `ToggleGroup`, `Select`, `Avatar`, `Alert`, `Button`, `Dialog`, `Tooltip` and `ScrollArea`. Use shadcn charts (`ChartContainer` + Recharts `BarChart`) for every chart. One exception: the Agents card's 7-day sparkline is a small inline SVG, because it has no axes, tooltip or legend to justify adding Recharts. Switch it to a `BarChart` once another view adds Recharts. Icons come from `lucide-react`. The agent page adds `Breadcrumb` and `Skeleton`. The sidebar and Settings (#58) add `Sidebar`, `Sheet`, `Separator`, `Switch`, `Input` and `AlertDialog`. The history views (#39 to #47) add `Tabs`, `DropdownMenu`, `RadioGroup` and `Checkbox` (the signer dialog); their charts are stacked `BarChart`s (vertical for Health and Cost, `layout="vertical"` for the Flow step bars). The thin per-row bars in the Flow PR table and the Cost top-agents table are plain flex `div`s, like the sparkline, since they have no axes or tooltip. The setup wizard (#73) adds `Collapsible` and `Textarea`. Its tag fields are `Badge`s inside an `Input`-styled box, and its phone progress bar is plain `div`s. The one non-shadcn component is [motion-primitives](https://motion-primitives.com) `AnimatedNumber`, which brings in the `motion` package (approved by rtorcato on 2026-10-16). See Motion.
+Use stock shadcn/ui only, with no custom components: `Card`, `Badge`, `Table`, `ToggleGroup`, `Select`, `Avatar`, `Alert`, `Button`, `Dialog`, `Tooltip` and `ScrollArea`. Use shadcn charts (`ChartContainer` + Recharts `BarChart`) for every chart. One exception: the Agents card's 7-day sparkline is a small inline SVG, because it has no axes, tooltip or legend to justify adding Recharts. Switch it to a `BarChart` once another view adds Recharts. Icons come from `lucide-react`. The agent page adds `Breadcrumb` and `Skeleton`. The sidebar and Settings (#58) add `Sidebar`, `Sheet`, `Separator`, `Switch`, `Input` and `AlertDialog`. The history views (#39 to #47) add `Tabs`, `DropdownMenu`, `RadioGroup` and `Checkbox` (the signer dialog); their charts are stacked `BarChart`s (vertical for Health and Cost, `layout="vertical"` for the Flow step bars). The thin per-row bars in the Flow PR table and the Cost top-agents table are plain flex `div`s, like the sparkline, since they have no axes or tooltip. The setup wizard (#73) adds `Collapsible` and `Textarea`. Editing agents adds `Sonner` for the save toast. The sign-in QR code is the only new package (`qrcode`, rendered as SVG). Its tag fields are `Badge`s inside an `Input`-styled box, and its phone progress bar is plain `div`s. The one non-shadcn component is [motion-primitives](https://motion-primitives.com) `AnimatedNumber`, which brings in the `motion` package (approved by rtorcato on 2026-10-16). See Motion.
 
 ## Motion
 
