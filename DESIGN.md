@@ -10,7 +10,7 @@ The design spec for buzz-dashboard. Read it before writing any UI code, and keep
 - **Update:** history and alerts (#39 to #47): Timeline with Buzz events, Health, Cost, Alerts, Needs-you snooze and ack, the generic Pipeline flow and the cost chip, approved by rtorcato on 2026-10-23. They all read the optional history store (#39), and anything that saves needs owner sign-in (#40), so build those two first.
 - **Update:** Settings → Sources (#42, #43), approved by rtorcato on 2026-10-23: connected and not-connected states, the owner-signer confirm dialog, an ingest token on the OTel endpoint, one cost source at a time and no log source in v1.
 - **Update:** the Releases view (#71) and the first-run setup wizard (#73), approved by rtorcato on 2026-10-23. The wizard saves to a config store that env always overrides, so build that store first.
-- **Update:** the Toolkit card on the agent page, approved by rtorcato on 2026-11-11. Then on 2026-11-11, admin editing of agents, the sign-in gate with per-hive roles, and the hive switcher. Build them in this order: sign-in and roles, hive config with the switcher, the read-only Toolkit, edit mode, then the apply job. Where Save writes is still open (see Saving).
+- **Update:** the Toolkit card on the agent page, approved by rtorcato on 2026-11-11. Then on 2026-11-11, admin editing of agents, the sign-in gate with per-hive roles, and the hive switcher. Build them in this order: sign-in and roles, hive config with the switcher, the read-only Toolkit, then edit mode. On 2026-11-11 rtorcato chose Buzz 1.0 for Save (see Saving). Edit mode ships once the hive runs Buzz 1.0, and everything before it works on 0.X.
 - **Mockups:** kept outside the repo and not linked from it. This file is the spec, so build from the text below.
 
 ## Principle
@@ -167,13 +167,14 @@ Only a hive **admin** (see Sign-in and roles) sees any of this. Viewers get the 
 
 Save never writes live. "Review and save" opens a `Dialog` (a full-screen `Sheet` on phones):
 
-- **Diff:** one block per file touched (`config/agents/<slug>-<id>.json`, `agents/<slug>.md`, `<slug>.prompt.md`), the path in mono over a unified diff: removed lines on a 10% `destructive` tint with `-`, added lines on a 10% `success` tint with `+`. The `+`/`-` carry the meaning, not just the colour.
-- **Commit message:** a prefilled `Input`, "Bumble: model to opus, add animate skill", editable.
+- **Diff:** one block per part of the config that changed (settings, instructions, toolkit), the part's name in mono over a unified diff: removed lines on a 10% `destructive` tint with `-`, added lines on a 10% `success` tint with `+`. The `+`/`-` carry the meaning, not just the colour.
+- **Change note:** a prefilled `Input`, "Bumble: model to opus, add animate skill", editable. It's saved with the revision.
 - **Restart to apply:** a `Checkbox`, on by default, with the hint "The agent finishes its current turn first."
 - **Buttons:** ghost "Back to editing" and primary "Save".
-- **Where it writes, v1 (approved):** a commit to the hive's config repo (buzz-nest), made as the signed-in admin. A small apply job on the hive host pulls it, writes the agent's config and restarts the agent. Every change has history and a revert, and the dashboard never touches the Desktop app's files or the agents' keys.
-- **Open question for rtorcato:** Buzz 1.0 (block/buzz-app, 10 Nov 2026) keeps each agent's settings and instructions on the relay, as revisions in a private per-agent config channel. If the hive moves to 1.0, Save publishes a new config revision signed with the admin's sign-in key instead of committing, and the apply job goes away. The Review dialog stays the same either way.
-- **After saving:** a `Sonner` toast ("Saved. Bumble restarts after its current turn.") with a link to the commit or revision. The Runtime card then shows the restart as it happens.
+- **Where it writes (rtorcato, 2026-11-11):** Buzz 1.0 keeps each agent's settings and instructions on the relay, as revisions in a private per-agent config channel (NIP-AP, NIP-AR). Save publishes a new revision, signed in the browser by the admin's sign-in key, so history and revert come from the relay. There's no config-repo commit and no apply job. The dashboard never holds the agents' keys and never touches the Desktop app's files.
+- **Before 1.0:** on a hive still running Buzz 0.X there's no relay config to write, so Edit doesn't show and the agent page stays read-only.
+- **Check during the build:** whether the relay accepts a revision from an admin who isn't the agents' owner. If it doesn't, only the owner gets Edit, and other admins see it disabled with a `Tooltip`: "Only the owner's key can change agents on this hive."
+- **After saving:** a `Sonner` toast ("Saved. Bumble restarts after its current turn.") with a link to the revision. The Runtime card then shows the restart as it happens.
 - **Failure:** the dialog stays open with a destructive `Alert` in plain words ("Someone else changed Bumble's config since you opened it. Reload to see their change."). Nothing is lost.
 
 ### Sign-in and roles
