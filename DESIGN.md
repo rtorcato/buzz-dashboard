@@ -172,6 +172,7 @@ Save never writes live. "Review and save" opens a `Dialog` (a full-screen `Sheet
 - **Restart to apply:** a `Checkbox`, on by default, with the hint "The agent finishes its current turn first."
 - **Buttons:** ghost "Back to editing" and primary "Save".
 - **Where it writes (rtorcato, 2026-11-11):** Buzz 1.0 keeps each agent's settings and instructions on the relay, as revisions in a private per-agent config channel (NIP-AP, NIP-AR). Save publishes a new revision, signed in the browser by the admin's sign-in key, so history and revert come from the relay. There's no config-repo commit and no apply job. The dashboard never holds the agents' keys and never touches the Desktop app's files.
+- **The relay enforces, the UI only hides:** hiding Edit from viewers is presentation. The relay decides who may publish a revision and rejects anyone else, so the build never trusts the browser's role check. Viewers never receive system prompts or config revisions at all; the server leaves them out of the page data, not just out of view. A revision holds settings, instructions and the toolkit only, never env values, keys or credentials.
 - **Before 1.0:** on a hive still running Buzz 0.X there's no relay config to write, so Edit doesn't show and the agent page stays read-only.
 - **Check during the build:** whether the relay accepts a revision from an admin who isn't the agents' owner. If it doesn't, only the owner gets Edit, and other admins see it disabled with a `Tooltip`: "Only the owner's key can change agents on this hive."
 - **After saving:** a `Sonner` toast ("Saved. Bumble restarts after its current turn.") with a link to the revision. The Runtime card then shows the restart as it happens.
@@ -201,7 +202,7 @@ One dashboard can watch several hives.
 - **Add a hive** (`Dialog`): name, relay URL (mono), status-feed URL, then the admin and viewer lists as tag fields. Test runs the same relay checks as setup step 3 before Save unlocks.
 - **Routes carry the hive:** `/h/<hive>/…` (`/h/home/agents/jazz`), so shared links open the right hive. With one hive, the plain routes keep working and redirect.
 - **Other hives in Needs you:** one muted line at the bottom of Needs you when another hive needs you or has a stale feed: "Other hives: Staging feed is 2h old · Switch". It isn't counted, so the current hive's count stays honest.
-- **Each hive is separate:** its own relay connection, status feed, config repo and role lists. Nothing from one hive shows in another.
+- **Each hive is separate:** its own relay connection, status feed, agent config and role lists. Nothing from one hive shows in another.
 - **Collapsed rail:** only the icon tile, with a `Tooltip` naming the hive.
 
 ## Status feed (#26)
