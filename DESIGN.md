@@ -659,7 +659,7 @@ No Lottie on these screens. A looping illustration pulls the eye on a screen you
 
 ### Memory, cost sign-in, config history, hive icons and presence
 
-Approved by rtorcato on 2026-11-11. Layouts are as specced above; this adds motion only. Every duration is 300ms or less, and only `transform`, `opacity` and `filter` move (plus `grid-template-rows` for accordions and colour for tints). Live counters update in place, with no per-tick animation.
+Approved by rtorcato on 2026-11-11. Layouts are as specced above; this adds motion only. Every duration is 300ms or less, and only `transform`, `opacity` and `filter` move (plus `width` on the sliding pill, `grid-template-rows` for accordions and colour for tints). Live counters update in place, with no per-tick animation.
 
 **Curves** (CSS custom properties, set once in `globals.css`):
 
@@ -676,7 +676,7 @@ Approved by rtorcato on 2026-11-11. Layouts are as specced above; this adds moti
 | Sliding pill (tabs, selected row) | an absolutely positioned pill moves with `transform` + `width`; the label colour fades | 250ms `--ease-tab` (220ms for the memory row highlight) | transitions.dev 16 tabs sliding |
 | Soft text swap (a changed number or label) | old value out, new value in: opacity, `blur(2px)` and a 4px `translateY` | 160ms `--ease-out` | transitions.dev 34 text swap soft |
 | Icon swap (spinner → check, copy → check) | both icons stacked in one grid cell; cross-fade with scale 0.6 → 1 and `blur(2px)` | 180ms `--ease-out` | transitions.dev 09 icon swap |
-| Success check | pops from scale 0.7 and −25°, then the stroke draws (`stroke-dashoffset`) | 300ms pop, 300ms draw after a 90ms delay | transitions.dev 10 success check |
+| Success check | pops from scale 0.7 and −25°, then the stroke draws (`stroke-dashoffset`) | 300ms pop, 210ms draw after a 90ms delay (300ms in all) | transitions.dev 10 success check |
 | Shimmer (work in progress) | gradient clipped to the text, sweeping left to right, only while the work runs | 1.8s linear loop, stops when the work ends | Magic UI `AnimatedShinyText` |
 | Enter (cards, rows) | fade, 8px rise and `blur(4px)` → 0 | 260ms `--ease-out` | Magic UI `BlurFade` |
 | Leave | fade and scale to 0.98 | 140ms `--ease-out` | — |
@@ -695,7 +695,7 @@ Approved by rtorcato on 2026-11-11. Layouts are as specced above; this adds moti
 | Config history: Revert to this | "Publishing…" shimmers on the button, then a success check. The new revision enters at the top of the list, the Live tag slides to it, and a Sonner toast rises. | as shared effects; Sonner default |
 | Hive switcher: menu | `DropdownMenu` grows from the trigger (`transform-origin` at the trigger) with fade and scale 0.96 → 1. Items tint on hover. | 180ms in, 120ms out; hover 120ms |
 | Hive switcher: icons | Each tile shows initials until its relay's icon loads, then the icon fades in from `blur(4px)`. Only on first load: an icon already in the browser cache shows at once with no fade. | 260ms `--ease-out` |
-| Hive switcher: ⌘1 to ⌘3 | **No animation.** Keyboard shortcuts are used dozens of times a day, so they switch instantly. | — |
+| Hive switcher: ⌘1 to ⌘9 | **No animation.** Keyboard shortcuts are used dozens of times a day, so they switch instantly. | — |
 | Agents: presence loading | Badges read Unknown with a shimmering "Reading presence…" line. As each read lands, its badge soft-swaps to Active or Quiet. A failed read stays Unknown. | 160ms per badge |
 | Agents: All ↔ Archived | Current cards leave together; the archived banner folds open; the archived cards enter with a stagger. Switching back to All does not replay the presence load. | leave 140ms, fold 260ms, cards 260ms with 40ms stagger |
 
