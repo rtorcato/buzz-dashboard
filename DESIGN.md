@@ -636,7 +636,7 @@ A `max-w-[1040px]` page: a 240px stepper column, then the step `Card`, with a 40
 
 ## Components
 
-Use stock shadcn/ui only, with no custom components: `Card`, `Badge`, `Table`, `ToggleGroup`, `Select`, `Avatar`, `Alert`, `Button`, `Dialog`, `Tooltip` and `ScrollArea`. Use shadcn charts (`ChartContainer` + Recharts `BarChart`) for every chart. One exception: the Agents card's 7-day sparkline is a small inline SVG, because it has no axes, tooltip or legend to justify adding Recharts. Switch it to a `BarChart` once another view adds Recharts. Icons come from `lucide-react`. The agent page adds `Breadcrumb` and `Skeleton`. The sidebar and Settings (#58) add `Sidebar`, `Sheet`, `Separator`, `Switch`, `Input` and `AlertDialog`. The history views (#39 to #47) add `Tabs`, `DropdownMenu`, `RadioGroup` and `Checkbox` (the signer dialog); their charts are stacked `BarChart`s (vertical for Health and Cost, `layout="vertical"` for the Flow step bars). The thin per-row bars in the Flow PR table and the Cost top-agents table are plain flex `div`s, like the sparkline, since they have no axes or tooltip. The setup wizard (#73) adds `Collapsible` and `Textarea`. Editing agents adds `Sonner` for the save toast. Two new packages: `qrcode` for the sign-in QR code (rendered as SVG) and `react-markdown` for the Memory card (raw HTML off). Config history reuses `Sheet`. The tag fields (Add a hive's admin and viewer lists, and Responds to's allowlist) are `Badge`s inside an `Input`-styled box, and the setup wizard's phone progress bar is plain `div`s. The one non-shadcn component is [motion-primitives](https://motion-primitives.com) `AnimatedNumber`, which brings in the `motion` package (approved by rtorcato on 2026-10-16). See Motion.
+Use stock shadcn/ui only, with no custom components: `Card`, `Badge`, `Table`, `ToggleGroup`, `Select`, `Avatar`, `Alert`, `Button`, `Dialog`, `Tooltip` and `ScrollArea`. Use shadcn charts (`ChartContainer` + Recharts `BarChart`) for every chart. One exception: the Agents card's 7-day sparkline is a small inline SVG, because it has no axes, tooltip or legend to justify adding Recharts. Switch it to a `BarChart` once another view adds Recharts. Icons come from `lucide-react`. The agent page adds `Breadcrumb` and `Skeleton`. The sidebar and Settings (#58) add `Sidebar`, `Sheet`, `Separator`, `Switch`, `Input` and `AlertDialog`. The history views (#39 to #47) add `Tabs`, `DropdownMenu`, `RadioGroup` and `Checkbox` (the signer dialog); their charts are stacked `BarChart`s (vertical for Health and Cost, `layout="vertical"` for the Flow step bars). The thin per-row bars in the Flow PR table and the Cost top-agents table are plain flex `div`s, like the sparkline, since they have no axes or tooltip. The setup wizard (#73) adds `Collapsible` and `Textarea`. Editing agents adds `Sonner` for the save toast. Two new packages: `qrcode` for the sign-in QR code (rendered as SVG) and `react-markdown` for the Memory card (raw HTML off). Config history reuses `Sheet`. The tag fields (Add a hive's admin and viewer lists, and Responds to's allowlist) are `Badge`s inside an `Input`-styled box, and the setup wizard's phone progress bar is plain `div`s. The one non-shadcn component is [motion-primitives](https://motion-primitives.com) `AnimatedNumber`, which brings in the `motion` package (approved by rtorcato on 2026-10-16). Two [Magic UI](https://magicui.design) components, `AnimatedShinyText` and `BlurFade`, are copied in through the shadcn registry and use the same `motion` package, so they add no new dependency. See Motion.
 
 ## Motion
 
@@ -656,6 +656,52 @@ Motion explains a change. It never decorates. It runs only when a value changes,
 | Agents card → agent page | native View Transitions: `view-transition-name` on the avatar and the name, so they morph into the hero | 250ms, same easing | Next.js `viewTransition` (experimental flag), no extra package |
 
 No Lottie on these screens. A looping illustration pulls the eye on a screen you only glance at. Keep it for a future "All clear" state.
+
+### Memory, cost sign-in, config history, hive icons and presence
+
+Approved by rtorcato on 2026-11-11. Layouts are as specced above; this adds motion only. Every duration is 300ms or less, and only `transform`, `opacity` and `filter` move (plus `grid-template-rows` for accordions and colour for tints). Live counters update in place, with no per-tick animation.
+
+**Curves** (CSS custom properties, set once in `globals.css`):
+
+| Token | Value | Use |
+|---|---|---|
+| `--ease-out` | `cubic-bezier(.23, 1, .32, 1)` | Default for enters, swaps, fills and menus |
+| `--ease-drawer` | `cubic-bezier(.32, .72, 0, 1)` | Sheet opening (iOS drawer curve) |
+| `--ease-tab` | `cubic-bezier(.22, 1, .36, 1)` | Sliding tab and selection pills |
+
+**Shared effects** (one implementation each, reused across the screens):
+
+| Effect | How | Timing | Source |
+|---|---|---|---|
+| Sliding pill (tabs, selected row) | an absolutely positioned pill moves with `transform` + `width`; the label colour fades | 250ms `--ease-tab` (220ms for the memory row highlight) | transitions.dev 16 tabs sliding |
+| Soft text swap (a changed number or label) | old value out, new value in: opacity, `blur(2px)` and a 4px `translateY` | 160ms `--ease-out` | transitions.dev 34 text swap soft |
+| Icon swap (spinner → check, copy → check) | both icons stacked in one grid cell; cross-fade with scale 0.6 → 1 and `blur(2px)` | 180ms `--ease-out` | transitions.dev 09 icon swap |
+| Success check | pops from scale 0.7 and −25°, then the stroke draws (`stroke-dashoffset`) | 300ms pop, 300ms draw after a 90ms delay | transitions.dev 10 success check |
+| Shimmer (work in progress) | gradient clipped to the text, sweeping left to right, only while the work runs | 1.8s linear loop, stops when the work ends | Magic UI `AnimatedShinyText` |
+| Enter (cards, rows) | fade, 8px rise and `blur(4px)` → 0 | 260ms `--ease-out` | Magic UI `BlurFade` |
+| Leave | fade and scale to 0.98 | 140ms `--ease-out` | — |
+| Fold open / closed | `grid-template-rows: 0fr ↔ 1fr` plus fade | 260ms rows, 200ms opacity | transitions.dev 21 accordion |
+
+**Per screen:**
+
+| Screen | What moves | Timing |
+|---|---|---|
+| Cost: reading turn reports | "Reading new turn reports" shimmers; the count soft-swaps as it climbs and the progress bar fills with `scaleX`. On finish the spinner icon-swaps to a success check, and the strip folds closed 1.4s later. | as shared effects |
+| Cost: 7d / 30d / 90d | Sliding pill. Each changed figure soft-swaps. Chart bars regrow from the baseline with `scaleY`, left to right. | bars 300ms `--ease-out`, 30ms stagger |
+| Memory: pick a record | Selection highlight slides to the row; the reader cross-fades to the new record. | 220ms highlight, 160ms cross-fade |
+| Memory: Copy | Icon swap to a check and text swap to "Copied"; both revert after 1.6s. | 180ms |
+| Memory: core meter | Fills once with `scaleX` on first view of the card, never on refresh. | 300ms `--ease-out` |
+| Config history: sheet | shadcn `Sheet` opens with `translateX` and closes faster along the same path; the overlay fades. Revisions enter with a stagger. | open 300ms `--ease-drawer`, close 200ms `--ease-out`; rows 260ms, 80ms + 35ms × index |
+| Config history: Revert to this | "Publishing…" shimmers on the button, then a success check. The new revision enters at the top of the list, the Live tag slides to it, and a Sonner toast rises. | as shared effects; Sonner default |
+| Hive switcher: menu | `DropdownMenu` grows from the trigger (`transform-origin` at the trigger) with fade and scale 0.96 → 1. Items tint on hover. | 180ms in, 120ms out; hover 120ms |
+| Hive switcher: icons | Each tile shows initials until its relay's icon loads, then the icon fades in from `blur(4px)`. Only on first load: an icon already in the browser cache shows at once with no fade. | 260ms `--ease-out` |
+| Hive switcher: ⌘1 to ⌘3 | **No animation.** Keyboard shortcuts are used dozens of times a day, so they switch instantly. | — |
+| Agents: presence loading | Badges read Unknown with a shimmering "Reading presence…" line. As each read lands, its badge soft-swaps to Active or Quiet. A failed read stays Unknown. | 160ms per badge |
+| Agents: All ↔ Archived | Current cards leave together; the archived banner folds open; the archived cards enter with a stagger. Switching back to All does not replay the presence load. | leave 140ms, fold 260ms, cards 260ms with 40ms stagger |
+
+**Reduced motion** (`prefers-reduced-motion: reduce`, or Settings → Motion → Reduced): nothing slides, scales, grows or staggers. Pills, the sheet, menus, bars and fills jump to their end state. Shimmer becomes static muted text, the spinner stays still, and the check appears fully drawn. Plain opacity cross-fades stay, because they carry the "this changed" signal without movement.
+
+**Not used:** Aceternity and rareui, which are built for marketing pages. No Lottie.
 
 ## Rules
 
