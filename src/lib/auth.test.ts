@@ -17,6 +17,7 @@ const {
   PROXY_SECRET_HEADER,
   proxyUser,
   publicOrigin,
+  safeNext,
   seal,
   unseal,
   verifyLogin,
@@ -214,5 +215,30 @@ describe("encryptSecret", () => {
     vi.stubEnv("BUZZ_PRIVATE_KEY", "rotated");
     expect(decryptSecret(value)).toBeNull();
     vi.stubEnv("BUZZ_PRIVATE_KEY", "test-key");
+  });
+});
+
+describe("safeNext", () => {
+  it("keeps same-site paths", () => {
+    expect(safeNext("/agents?x=1#a")).toBe("/agents?x=1#a");
+    expect(safeNext("/")).toBe("/");
+  });
+
+  it("refuses anything that resolves off-site", () => {
+    for (const bad of [
+      "//evil.com",
+      "/\\evil.com",
+      "/\t/evil.com",
+      "/\n/evil.com",
+      decodeURIComponent("/%09/evil.com"),
+      decodeURIComponent("/%0a/evil.com"),
+      "https://evil.com",
+      "evil.com",
+      "javascript:alert(1)",
+      undefined,
+      ["/a"],
+    ]) {
+      expect(safeNext(bad), String(bad)).toBe("/");
+    }
   });
 });

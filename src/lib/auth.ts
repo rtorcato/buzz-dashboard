@@ -322,6 +322,24 @@ export class OwnerRequired extends Error {
   }
 }
 
+const BASE = "http://same.invalid";
+
+/**
+ * A sign-in `next` as a same-site path, else "/". Resolved the way a browser
+ * would, so "/\t/evil.com" or "//evil.com" can't leave the site (#115).
+ */
+export function safeNext(next: unknown): string {
+  if (typeof next !== "string") return "/";
+  try {
+    const url = new URL(next, BASE);
+    return url.origin === BASE && next.startsWith("/")
+      ? `${url.pathname}${url.search}${url.hash}`
+      : "/";
+  } catch {
+    return "/";
+  }
+}
+
 /** A sealed session for `pubkey` and its lifetime in seconds. */
 export const newSession = (pubkey: string, now: number) => ({
   value: seal({ typ: "session", pubkey }, SESSION_S, now),

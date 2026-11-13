@@ -1,15 +1,11 @@
 import { redirect } from "next/navigation";
 import { SignInButton } from "@/components/sign-in";
 import { Card } from "@/components/ui/card";
-import { authMode, getOwner } from "@/lib/auth";
+import { authMode, getOwner, safeNext } from "@/lib/auth";
 
 // DESIGN.md → Sign-in and roles → Sign-in page, for REQUIRE_SIGN_IN_FOR_READS
 // (#115). ponytail: extension sign-in only; the phone signer and bunker link
 // come with the roles work.
-
-// Only same-site paths, so `next` can't send you to another site.
-const safeNext = (next: unknown) =>
-  typeof next === "string" && /^\/(?![/\\])/.test(next) ? next : "/";
 
 export default async function SignInPage({
   searchParams,
