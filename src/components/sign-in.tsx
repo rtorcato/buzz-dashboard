@@ -84,8 +84,17 @@ async function signIn(): Promise<string | null> {
     : "Sign-in failed. Try again.";
 }
 
-/** "Sign in with Nostr" for an owner note outside the sidebar. */
-export function SignInButton() {
+/**
+ * "Sign in with Nostr" for an owner note outside the sidebar. With `next`, it
+ * goes there after signing in instead of refreshing the page.
+ */
+export function SignInButton({
+  label = "Sign in with Nostr",
+  next,
+}: {
+  label?: string;
+  next?: string;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,11 +110,12 @@ export function SignInButton() {
           const err = await signIn().catch(() => "Sign-in failed.");
           setBusy(false);
           if (err) setError(err);
+          else if (next) router.replace(next);
           else router.refresh();
         }}
       >
         <KeyRound aria-hidden />
-        {busy ? "Signing in…" : "Sign in with Nostr"}
+        {busy ? "Signing in…" : label}
       </Button>
       {error && (
         <span role="alert" className="text-xs text-destructive">
@@ -226,7 +236,11 @@ export function SignInBlock({ state }: { state: SignInState }) {
             {nostr && (
               <DropdownMenuItem
                 onClick={async () => {
-                  await fetch("/api/auth/logout", { method: "POST" });
+                  await fetch("/api/auth/logout", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: "{}",
+                  });
                   router.refresh();
                 }}
               >

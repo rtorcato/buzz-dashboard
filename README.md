@@ -201,6 +201,7 @@ reach the browser, and an empty value counts as unset. See
 | `AUTH_MODE` | No | Owner sign-in for the dashboard's own writes: `nostr` (NIP-07 extension, allowed keys are `BUZZ_OWNER_PUBKEY`, which may be a comma list) or `proxy`. Unset, sign-in is off and nothing can write. See [Owner sign-in](https://docs.torcato.dev/buzz-dashboard/docs/owner-sign-in) |
 | `AUTH_PUBLIC_URL` | With `AUTH_MODE=nostr` | The URL you open the dashboard at, e.g. `https://hive.example.com`. Sign-in events must be signed for it. Without it Nostr sign-in stays off |
 | `AUTH_PROXY_HEADER`, `AUTH_PROXY_SECRET` | With `AUTH_MODE=proxy` | The header your proxy names the user in, and the secret it sends as `X-Buzz-Proxy-Secret`. The user header only counts with that secret |
+| `REQUIRE_SIGN_IN_FOR_READS` | No | `1` puts every page and API read behind owner sign-in, not just writes. Off by default; fails closed without `AUTH_MODE` |
 | `AUTH_PROXY_USERS` | No | Comma list of proxy users who are the owner. Unset, anyone the proxy lets through is |
 | `GITHUB_TOKEN` | No | Fine-grained, read-only GitHub token. Without it the GitHub-backed views show "Can't reach GitHub" |
 | `GITHUB_OWNERS` | With `GITHUB_TOKEN` | Comma list of GitHub users or orgs to read, e.g. `octo-org,octo-labs`. No default |
@@ -283,6 +284,11 @@ and the cost source. Set `AUTH_MODE` to turn it on:
   auth, for example) names the user in `AUTH_PROXY_HEADER` and sends
   `AUTH_PROXY_SECRET` as `X-Buzz-Proxy-Secret`. `AUTH_PROXY_USERS` limits who
   counts as the owner.
+
+Set `REQUIRE_SIGN_IN_FOR_READS=1` to put every page and API read behind the
+same sign-in, for a dashboard reachable from outside your network. Signed out,
+pages go to `/sign-in` and the API answers 401; `/api/health` and OTLP ingest
+stay open. It fails closed: with the flag on and `AUTH_MODE` unset, nobody gets in.
 
 Unset, sign-in is off and those controls stay read-only. See
 [Owner sign-in](https://docs.torcato.dev/buzz-dashboard/docs/owner-sign-in).

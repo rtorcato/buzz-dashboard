@@ -29,6 +29,7 @@ Without `BUZZ_RELAY_URL` and `BUZZ_PRIVATE_KEY` the relay-backed views show a "C
 | `AUTH_PROXY_HEADER` | Proxy mode: the request header your proxy names the user in, e.g. `X-authentik-username`. |
 | `AUTH_PROXY_SECRET` | Proxy mode: a shared secret the proxy sends as `X-Buzz-Proxy-Secret`. The user header only counts with it. |
 | `AUTH_PROXY_USERS` | Proxy mode: comma list of users who are the owner. Unset, anyone the proxy lets through is. |
+| `REQUIRE_SIGN_IN_FOR_READS` | `1` puts every page and API read behind owner sign-in, not just writes. Signed out, pages go to `/sign-in` and the API answers 401; `/api/health` and OTLP ingest stay open. Off by default. With it on and `AUTH_MODE` unset, nobody gets in. |
 
 In `nostr` mode the keys allowed to sign in are `BUZZ_OWNER_PUBKEY`, which may be a comma list. See [Owner sign-in](./owner-sign-in.md).
 
