@@ -8,6 +8,7 @@
 # buzz-dashboard
 
 [<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="40">](https://buymeacoffee.com/rtorcato)
+[<img src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=githubsponsors&style=for-the-badge" alt="Sponsor on GitHub" height="40">](https://github.com/sponsors/rtorcato)
 
 A self-hosted, read-only dashboard for a [Buzz](https://buzz.xyz) hive. It shows
 what your agents are doing and which pull requests are waiting on you. It never
