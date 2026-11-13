@@ -203,7 +203,7 @@ Only a hive **admin** (see Sign-in and roles) sees any of this. Viewers get the 
 
 ### Agent settings, reference-only (#109)
 
-The dashboard can't publish a config revision yet (see "Check during the build" under Saving), so until it can, the Agent settings card is **read-only reference**. Admins see it this way. Viewers see the plain card with no system prompt, as above. Once publishing works, the card switches to the Edit and Review and save flow above and the lock pill goes away. Mockups: `buzz-dashboard/agent-settings-locked-*` on R2.
+The dashboard can't publish a config revision yet (see "Check during the build" under Saving), so until it can, the Agent settings card is **read-only reference**. Only admins see this card (viewers never get it, see Saving). Once publishing works, the card switches to the Edit and Review and save flow above and the lock pill goes away. Mockups: `buzz-dashboard/agent-settings-locked-*` on R2.
 
 - **Card:** has no `Select`s or edit ring. Every setting is a read-only row, with the label in muted text on the left and the value on the right. Model, Effort, Parallel turns and the timeouts are in mono. Long values (such as `us.anthropic.claude-haiku-5-5-v1:0`) truncate, show the full value in a `Tooltip`, and never push the row wider. The system prompt preview is `line-clamp-3`.
 - **Lock pill:** under the card title, a muted `Badge` reading "`lock` Managed in Buzz Desktop". Under it is a muted source line: "From the relay config · revision 14 · 2d ago". If the relay config can't be read, it falls back to the status feed's `model`, and the line reads "From the status feed".
