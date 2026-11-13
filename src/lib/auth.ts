@@ -13,8 +13,9 @@ import { cookies, headers } from "next/headers";
 import { z } from "zod";
 import { readServerEnv } from "./env";
 
-// Owner sign-in (#40). Read-only views stay public; only the dashboard's own
-// writes (snooze and ack, alerts, sources, custom stages) need the owner.
+// Owner sign-in (#40). Read-only views are public unless
+// REQUIRE_SIGN_IN_FOR_READS is set (#115); the dashboard's own writes (snooze
+// and ack, alerts, sources, custom stages) always need the owner.
 //
 // AUTH_MODE picks how the owner proves who they are:
 // - "nostr": a NIP-07 browser extension signs a one-time challenge (a NIP-98
@@ -272,21 +273,20 @@ export function proxyUser(
   return allowed.length && !allowed.includes(user) ? null : user;
 }
 
-/** Who is signed in as the owner on this request, or null. */
-export async function getOwner(): Promise<Owner | null> {
+/** The owner named by a request's session cookie or proxy headers, or null. */
+export function ownerFrom(
+  session: string | undefined,
+  header: (name: string) => string | null,
+  now = Math.floor(Date.now() / 1000),
+): Owner | null {
   const mode = authMode();
   if (mode === "proxy") {
-    const h = await headers();
-    const user = proxyUser((name) => h.get(name));
+    const user = proxyUser(header);
     return user ? { via: "proxy", user } : null;
   }
   if (mode === "nostr") {
-    const jar = await cookies();
-    const session = unseal(
-      jar.get(SESSION_COOKIE)?.value,
-      Math.floor(Date.now() / 1000),
-    );
-    const pubkey = session?.typ === "session" ? session.pubkey : null;
+    const payload = unseal(session, now);
+    const pubkey = payload?.typ === "session" ? payload.pubkey : null;
     // A key removed from BUZZ_OWNER_PUBKEY loses its session at once.
     return typeof pubkey === "string" && ownerPubkeys().includes(pubkey)
       ? { via: "nostr", pubkey }
@@ -294,6 +294,20 @@ export async function getOwner(): Promise<Owner | null> {
   }
   return null;
 }
+
+/** Who is signed in as the owner on this request, or null. */
+export async function getOwner(): Promise<Owner | null> {
+  const [jar, h] = await Promise.all([cookies(), headers()]);
+  return ownerFrom(jar.get(SESSION_COOKIE)?.value, (name) => h.get(name));
+}
+
+/**
+ * REQUIRE_SIGN_IN_FOR_READS (#115): every page and API read needs the owner,
+ * not just writes. Fails closed: with the flag on and sign-in unset, nobody
+ * gets in.
+ */
+export const readsNeedSignIn = (env: Env = process.env) =>
+  /^(1|true|yes)$/i.test(env.REQUIRE_SIGN_IN_FOR_READS ?? "");
 
 /** For write handlers: the owner, or throws OwnerRequired (send a 403). */
 export async function requireOwner(): Promise<Owner> {

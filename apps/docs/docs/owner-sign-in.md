@@ -49,3 +49,13 @@ labels:
 ```
 
 Leave `AUTH_PROXY_USERS` unset and every user the proxy lets through is the owner.
+
+## Require sign-in for reads
+
+By default only writes need sign-in, and anyone who can reach the dashboard can read it. Once it is reachable from outside your network, set:
+
+```bash
+REQUIRE_SIGN_IN_FOR_READS=1
+```
+
+Every page and API read then needs the owner. Signed out, pages go to `/sign-in` and the API answers 401. `/api/health` and OTLP ingest stay open, since ingest has its own token. With the flag on and `AUTH_MODE` unset, nobody gets in.
