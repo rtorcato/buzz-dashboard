@@ -55,11 +55,13 @@ const pr = (over: Partial<GitHubItem>): GitHubItem => ({
   closedAt: null,
   mergedAt: null,
   reviews: [],
+  labelEvents: [],
   ...over,
 });
 const github = (prs: GitHubItem[]): GitHub => ({
   claims: [],
   prs,
+  releases: [],
   truncated: false,
 });
 

@@ -31,6 +31,28 @@ export type Review = {
   author: string;
 };
 
+/** A label added to or removed from an issue or PR (#54). */
+export type LabelEvent = {
+  label: string;
+  action: "added" | "removed";
+  /** Unix seconds. */
+  at: number;
+  /** GitHub login of who changed it. */
+  actor: string;
+};
+
+/** A published release (#54). */
+export type Release = {
+  repo: string;
+  tag: string;
+  name: string;
+  url: string;
+  /** Unix seconds. */
+  publishedAt: number;
+  author: string;
+  prerelease: boolean;
+};
+
 export type GitHubItem = {
   /** "owner/name", exactly as GitHub returns it. */
   repo: string;
@@ -49,6 +71,8 @@ export type GitHubItem = {
   mergedAt: number | null;
   /** PRs only, oldest first; [] for issues. */
   reviews: Review[];
+  /** The newest label changes, oldest first. */
+  labelEvents: LabelEvent[];
 };
 
 export type Claim = GitHubItem & {
@@ -61,6 +85,8 @@ export type GitHub = {
   claims: Claim[];
   /** PRs opened in the last PR_WINDOW_DAYS days, newest first. */
   prs: GitHubItem[];
+  /** Releases published on the owners' most recently pushed repos, newest first. */
+  releases: Release[];
   /** True when a search matched more than its 100 nodes, so items are missing. */
   truncated: boolean;
 };
@@ -108,6 +134,14 @@ type RawItem = {
   };
   /** Claims only: an issue's newest comments, oldest first. */
   comments?: { nodes: RawComment[] };
+  timelineItems?: {
+    nodes: ({
+      __typename: "LabeledEvent" | "UnlabeledEvent";
+      createdAt: string;
+      actor: { login: string } | null;
+      label: { name: string } | null;
+    } | null)[];
+  };
 };
 
 type RawSearch = { issueCount: number; nodes: (RawItem | null)[] };
@@ -138,6 +172,21 @@ export function toItem(raw: RawItem): GitHubItem {
               state: r.state,
               at: secs(r.submittedAt),
               author: r.author?.login ?? "ghost",
+            },
+          ]
+        : [],
+    ),
+    labelEvents: (raw.timelineItems?.nodes ?? []).flatMap((e) =>
+      e?.label
+        ? [
+            {
+              label: e.label.name,
+              action:
+                e.__typename === "LabeledEvent"
+                  ? ("added" as const)
+                  : ("removed" as const),
+              at: secs(e.createdAt),
+              actor: e.actor?.login ?? "ghost",
             },
           ]
         : [],
@@ -196,8 +245,14 @@ export function prQueries(now: Date, owners: string[]): string[] {
   return queries;
 }
 
+// ponytail: the last 30 label changes per item, on the items the reader
+// already fetches (PRs from the last 30 days and open claimed issues), not
+// every issue. Add an issue search if older or unclaimed ones matter.
+const LABEL_EVENT = `createdAt actor { login } label { name }`;
 const FIELDS = `number title url body createdAt closedAt
-  author { login } repository { nameWithOwner } labels(first: 20) { nodes { name } }`;
+  author { login } repository { nameWithOwner } labels(first: 20) { nodes { name } }
+  timelineItems(last: 30, itemTypes: [LABELED_EVENT, UNLABELED_EVENT]) { nodes { __typename
+    ... on LabeledEvent { ${LABEL_EVENT} } ... on UnlabeledEvent { ${LABEL_EVENT} } } }`;
 const NODES = `__typename
   ... on Issue { ${FIELDS} }
   ... on PullRequest { ${FIELDS} mergedAt
@@ -216,11 +271,11 @@ export function buildQuery(aliases: string[]): string {
   return `query(${vars}) { ${fields.join("\n")} }`;
 }
 
-async function graphql(
+async function graphql<T = Record<string, RawSearch>>(
   token: string,
   query: string,
   variables: Record<string, string>,
-): Promise<Record<string, RawSearch>> {
+): Promise<T> {
   // A fixed URL: the token only ever goes to api.github.com.
   const res = await fetch("https://api.github.com/graphql", {
     method: "POST",
@@ -235,7 +290,7 @@ async function graphql(
   });
   if (!res.ok) throw new Error(`GitHub GraphQL failed: HTTP ${res.status}`);
   const json = (await res.json()) as {
-    data?: Record<string, RawSearch> | null;
+    data?: T | null;
     errors?: { type?: string }[];
   };
   if (json.errors?.length || !json.data) {
@@ -247,6 +302,53 @@ async function graphql(
 }
 
 const nodes = (s: RawSearch) => s.nodes.filter((n) => n !== null);
+
+type RawRelease = {
+  name: string | null;
+  tagName: string;
+  url: string;
+  publishedAt: string | null;
+  isDraft: boolean;
+  isPrerelease: boolean;
+  author: { login: string } | null;
+};
+type RawReleases = {
+  repositoryOwner: {
+    repositories: {
+      nodes: ({
+        nameWithOwner: string;
+        releases: { nodes: (RawRelease | null)[] };
+      } | null)[];
+    };
+  } | null;
+};
+
+// ponytail: the 100 most recently pushed repos per owner, 10 releases each.
+export const RELEASES_QUERY = `query($owner: String!) { repositoryOwner(login: $owner) {
+  repositories(first: 100, orderBy: { field: PUSHED_AT, direction: DESC }) { nodes {
+    nameWithOwner releases(first: 10, orderBy: { field: CREATED_AT, direction: DESC }) {
+      nodes { name tagName url publishedAt isDraft isPrerelease author { login } } } } } } }`;
+
+/** Published (not draft) releases from one owner's RELEASES_QUERY result. */
+export function toReleases(data: RawReleases): Release[] {
+  return (data.repositoryOwner?.repositories.nodes ?? []).flatMap((repo) =>
+    (repo?.releases.nodes ?? []).flatMap((r) =>
+      r?.publishedAt && !r.isDraft
+        ? [
+            {
+              repo: repo?.nameWithOwner ?? "",
+              tag: r.tagName,
+              name: r.name || r.tagName,
+              url: r.url,
+              publishedAt: secs(r.publishedAt),
+              author: r.author?.login ?? "ghost",
+              prerelease: r.isPrerelease,
+            },
+          ]
+        : [],
+    ),
+  );
+}
 
 // Searches per request. 16 in one request ran into GitHub's 10s GraphQL
 // timeout (HTTP 502), and parallel requests trip its secondary rate limit, so
@@ -277,6 +379,14 @@ export async function getGitHub(
       ),
     );
   }
+  const releases: Release[] = [];
+  for (const owner of owners) {
+    releases.push(
+      ...toReleases(
+        await graphql<RawReleases>(token, RELEASES_QUERY, { owner }),
+      ),
+    );
+  }
   const prs = slices
     .flatMap((_, i) => nodes(data[`s${i}`]))
     .map(toItem)
@@ -286,6 +396,7 @@ export async function getGitHub(
       .map(toClaim)
       .sort((a, b) => b.createdAt - a.createdAt),
     prs,
+    releases: releases.sort((a, b) => b.publishedAt - a.publishedAt),
     truncated: Object.values(data).some((s) => s.issueCount > s.nodes.length),
   };
 }
@@ -316,7 +427,8 @@ function refresh(token: string): Promise<Fetched> {
   return inflight;
 }
 
-// A full read is 8 sequential requests and takes about 20s, so requests get
+// A full read is 8 sequential requests plus one per owner for releases, and
+// takes about 20s, so requests get
 // the last good read at once and a refresh runs behind them once it is 2
 // minutes old. Only the first request after a start (or after 5 minutes of
 // failures) waits. The history ingester calls this outside a request, so it
