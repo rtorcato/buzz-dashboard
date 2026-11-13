@@ -78,6 +78,8 @@ export type Row = {
   snippet: string;
   chips: string[];
   url: string | null;
+  /** "owner/repo#N" for a GitHub PR or issue, to match it to Needs you items. */
+  ref?: string;
 };
 
 /** Names for raw actors: hex pubkeys to agent names, channel ids to names. */
@@ -149,6 +151,8 @@ export function toRow(e: HistoryEvent, names: Names, q = ""): Row {
     snippet: snippet(e.title ?? e.body ?? "", q),
     chips: name ? [name] : [],
     url: e.url,
+    ref:
+      e.repo && typeof number === "number" ? `${e.repo}#${number}` : undefined,
   };
 }
 

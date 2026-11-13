@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import { cache } from "react";
 import { type GitHub, loadGitHub } from "./github";
 import type { FailingAgent, HealthSource } from "./health";
 import { loadFailing } from "./health-data";
@@ -187,7 +188,16 @@ export function countsByView(
   return counts;
 }
 
-export async function getNeedsYou(): Promise<NeedsYou> {
+/** The "owner/repo#N" refs of GitHub items that need the owner, for row tints. */
+export const needsYouRefs = (data: NeedsYou) =>
+  new Set(
+    data.rows.flatMap((r) =>
+      (r.keys ?? []).flatMap((k) => k.match(/^merge:(.+#\d+)$/)?.[1] ?? []),
+    ),
+  );
+
+// cache: the layout and the Timeline both read it in one request.
+export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
   // Render per request so the data is never baked in at build time.
   await connection();
   if (sampleMode()) {
@@ -253,4 +263,4 @@ export async function getNeedsYou(): Promise<NeedsYou> {
     failures,
     updatedAt,
   };
-}
+});

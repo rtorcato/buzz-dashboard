@@ -9,6 +9,7 @@ import {
   getNeedsYou,
   mergeRow,
   type NeedsYouRow,
+  needsYouRefs,
   oldestFirst,
   pausedRow,
 } from "./needs-you";
@@ -338,5 +339,21 @@ describe("failingRow", () => {
     ).toEqual({
       health: 2,
     });
+  });
+});
+
+describe("needsYouRefs", () => {
+  it("keeps only GitHub item refs", () => {
+    const refs = needsYouRefs({
+      connected: true,
+      rows: [
+        { keys: ["merge:rtorcato/js-common#2", "failing:Gale"] },
+        { keys: undefined },
+      ] as NeedsYouRow[],
+      headsUp: [],
+      failures: [],
+      updatedAt: null,
+    });
+    expect([...refs]).toEqual(["rtorcato/js-common#2"]);
   });
 });
