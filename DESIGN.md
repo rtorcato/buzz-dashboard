@@ -191,7 +191,7 @@ Only a hive **admin** (see Sign-in and roles) sees any of this. Viewers get the 
 - **Edit mode:** an amber `warning` "Editing" `Badge` beside the name, and an amber ring (`ring-2 ring-warning/40`) on each editable card: Toolkit and Agent settings. Everything else stays read-only.
 - **Toolkit, editing:** each chip gets an `x` button (`aria-label="Remove animate"`). Each group ends in an "Add…" input that takes a skill name or `owner/repo`, added on Enter. A new third-party skill shows as a dashed amber chip with the hint "Needs a security review before it installs". Saving one asks the security reviewer for a review, so the review rule lives in the form. It doesn't install until that review passes.
 - **Agent settings** (`Card`, admins only, in the right column under Runtime; it gets the amber ring in edit mode): the options the Buzz Desktop app holds today.
-  - Model (`Select`) and Runtime (`Select`).
+  - Model (`Select`), Effort (`Select`) and Runtime (`Select`). A blank model means opus, and a blank effort shows as "default" (the model decides).
   - Parallel turns (number `Input`, 1 to 8).
   - Responds to (`RadioGroup`): Owner only, Owner + allowlist, Anyone in the channel. With the allowlist option, a tag field of people (`Badge`s with `x`, the same pattern as the setup wizard's tag fields). It shows names but saves pubkeys.
   - The three timeouts (number `Input`s with a "min" suffix).
@@ -200,6 +200,20 @@ Only a hive **admin** (see Sign-in and roles) sees any of this. Viewers get the 
   - A changed field gets a small amber dot by its label and the old value under it, muted and struck through.
   - A muted `key-round` line at the bottom: "Keys and provider credentials stay on the hive host. They're never shown or edited here."
 - **Unsaved bar:** a sticky bar at the bottom of the main column while there are changes: "4 unsaved changes", ghost "Discard", primary "Review and save". Leaving the page with changes asks first (`AlertDialog`).
+
+### Agent settings, reference-only (#109)
+
+The dashboard can't publish a config revision yet (see "Check during the build" under Saving), so until it can, the Agent settings card is **read-only reference**. Admins see it this way. Viewers see the plain card with no system prompt, as above. Once publishing works, the card switches to the Edit and Review and save flow above and the lock pill goes away. Mockups: `buzz-dashboard/agent-settings-locked-*` on R2.
+
+- **Card:** has no `Select`s or edit ring. Every setting is a read-only row, with the label in muted text on the left and the value on the right. Model, Effort, Parallel turns and the timeouts are in mono. Long values (such as `us.anthropic.claude-haiku-5-5-v1:0`) truncate, show the full value in a `Tooltip`, and never push the row wider. The system prompt preview is `line-clamp-3`.
+- **Lock pill:** under the card title, a muted `Badge` reading "`lock` Managed in Buzz Desktop". Under it is a muted source line: "From the relay config · revision 14 · 2d ago". If the relay config can't be read, it falls back to the status feed's `model`, and the line reads "From the status feed".
+- **Button:** one outline "Change in Buzz Desktop" at the bottom of the card. Every field goes through it, so the card has one behaviour.
+- **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Change a setting in Buzz Desktop", with the muted line "The dashboard can't save agent settings yet."
+  - A Setting `Select` (Model, Effort, Runtime, Parallel turns, Responds to, a timeout) and a New value `Select` or `Input` for that setting. Under them, a muted "Now haiku" shows the current value in mono.
+  - Three numbered steps that fill in live from the picks, using the agent's real name: "Open Buzz Desktop → Agents → **Bumble** → Edit", "Set Model to **sonnet**", "Save. Bumble picks it up on its next turn."
+  - **Stopped agent:** a muted `info` note, "Bumble is stopped, so it won't see the change until it starts.", and step 3 becomes "Save, then **Start** Bumble so it loads the new value."
+  - Buttons: outline "`copy` Copy steps" and primary "Done", both `whitespace-nowrap`. Copying puts the steps on the clipboard as plain numbered text and shows a `Sonner` toast reading "Steps copied". Nothing is ever saved or reverted.
+- **Effort values:** default, low, medium, high, xhigh and max, with a muted footer in the picker reading "default = the model decides". **Check during the build:** cut this list down to what Desktop's Effort field accepts for `claude-acp`.
 
 ### Saving
 
@@ -654,6 +668,7 @@ Motion explains a change. It never decorates. It runs only when a value changes,
 | Card hover | `translateY(-2px)` and a darker border | 150ms | transitions.dev card lift |
 | Running dot | one `ping` when an agent goes to Running, then a steady dot | 1 × 1s | Tailwind `animate-ping`, run once. Never loop it: 12 pulsing dots is noise. |
 | Agents card → agent page | native View Transitions: `view-transition-name` on the avatar and the name, so they morph into the hero | 250ms, same easing | Next.js `viewTransition` (experimental flag), no extra package |
+| Agent settings modal opens / closes, copy confirm | fade and scale from 96%, overlay fades; copy icon swaps to `check` (scale 0.8→1) for 1.5s | 200ms in, 150ms out, `cubic-bezier(0.23, 1, 0.32, 1)`; icon 150ms | shadcn `Dialog`. Reduced motion: opacity only. |
 
 No Lottie on these screens. A looping illustration pulls the eye on a screen you only glance at. Keep it for a future "All clear" state.
 
