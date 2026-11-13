@@ -326,14 +326,20 @@ const BASE = "http://same.invalid";
 
 /**
  * A sign-in `next` as a same-site path, else "/". Resolved the way a browser
- * would, so "/\t/evil.com" or "//evil.com" can't leave the site (#115).
+ * would, so "/\t/evil.com", "//evil.com" or "/.//evil.com" can't leave the
+ * site (#115).
  */
 export function safeNext(next: unknown): string {
   if (typeof next !== "string") return "/";
   try {
     const url = new URL(next, BASE);
-    return url.origin === BASE && next.startsWith("/")
-      ? `${url.pathname}${url.search}${url.hash}`
+    // Dot segments collapse after resolving ("/.//evil.com" → "//evil.com"),
+    // so the result must not be protocol-relative either.
+    const path = `${url.pathname}${url.search}${url.hash}`;
+    return url.origin === BASE &&
+      next.startsWith("/") &&
+      !/^[/\\]{2}/.test(path)
+      ? path
       : "/";
   } catch {
     return "/";
