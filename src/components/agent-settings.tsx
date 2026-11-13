@@ -192,17 +192,18 @@ function Steps({
                 {i.label}
               </SelectItem>
             ))}
-            {setting === "Effort" && (
-              <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                default = the model decides
-              </p>
-            )}
           </SelectContent>
         </Select>
       </div>
-      {now[setting] && (
+      {(now[setting] || setting === "Effort") && (
         <p className="-mt-1 text-xs text-muted-foreground">
-          Now <span className="font-mono">{now[setting]}</span>
+          {now[setting] && (
+            <>
+              Now <span className="font-mono">{now[setting]}</span>
+            </>
+          )}
+          {now[setting] && setting === "Effort" && " · "}
+          {setting === "Effort" && "default = the model decides"}
         </p>
       )}
       {stopped && (
@@ -212,30 +213,28 @@ function Steps({
         </p>
       )}
       <ol className="list-decimal space-y-1.5 pl-5" aria-live="polite">
-        <li>
-          Open Buzz Desktop → Agents → <strong>{name}</strong> → Edit
-        </li>
-        <li>
-          Set {setting} to <strong className="font-mono">{value}</strong>
-        </li>
-        <li>
-          {stopped ? (
-            <>
-              Save, then <strong>Start</strong> {name} so it loads the new
-              value.
-            </>
-          ) : (
-            `Save. ${name} picks it up on its next turn.`
-          )}
-        </li>
+        {steps.map((parts, i) => (
+          <li key={parts[0]}>
+            {parts.map((t, j) =>
+              j % 2 ? (
+                // biome-ignore lint/suspicious/noArrayIndexKey: fixed parts.
+                <strong key={j} className={i === 1 ? "font-mono" : ""}>
+                  {t}
+                </strong>
+              ) : (
+                t
+              ),
+            )}
+          </li>
+        ))}
       </ol>
       <DialogFooter>
         <Button
           variant="outline"
           className="h-11 whitespace-nowrap sm:h-9"
-          onClick={() => {
-            copy(stepsText(steps));
-            toast("Steps copied");
+          onClick={async () => {
+            if (await copy(stepsText(steps))) toast("Steps copied");
+            else toast.error("Couldn't copy. Select the steps instead.");
           }}
         >
           <span className="grid *:col-start-1 *:row-start-1">

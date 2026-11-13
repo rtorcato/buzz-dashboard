@@ -16,22 +16,25 @@ export const SETTINGS = {
 
 export type Setting = keyof typeof SETTINGS;
 
-/** The numbered steps for changing `setting` to `value` in Buzz Desktop. */
+/**
+ * The numbered steps for changing `setting` to `value` in Buzz Desktop. Each
+ * step is a list of parts; odd-indexed parts are the ones the modal bolds.
+ */
 export function desktopSteps(
   name: string,
   setting: Setting,
   value: string,
   stopped: boolean,
-): string[] {
+): string[][] {
   return [
-    `Open Buzz Desktop → Agents → ${name} → Edit`,
-    `Set ${setting} to ${value}`,
+    ["Open Buzz Desktop → Agents → ", name, " → Edit"],
+    [`Set ${setting} to `, value],
     stopped
-      ? `Save, then Start ${name} so it loads the new value.`
-      : `Save. ${name} picks it up on its next turn.`,
+      ? ["Save, then ", "Start", ` ${name} so it loads the new value.`]
+      : [`Save. ${name} picks it up on its next turn.`],
   ];
 }
 
 /** The steps as plain numbered text, for the clipboard. */
-export const stepsText = (steps: string[]) =>
-  steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+export const stepsText = (steps: string[][]) =>
+  steps.map((s, i) => `${i + 1}. ${s.join("")}`).join("\n");
