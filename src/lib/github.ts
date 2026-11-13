@@ -381,11 +381,16 @@ export async function getGitHub(
   }
   const releases: Release[] = [];
   for (const owner of owners) {
-    releases.push(
-      ...toReleases(
-        await graphql<RawReleases>(token, RELEASES_QUERY, { owner }),
-      ),
-    );
+    // Releases are extra: a failed read skips them and keeps PRs and claims.
+    try {
+      releases.push(
+        ...toReleases(
+          await graphql<RawReleases>(token, RELEASES_QUERY, { owner }),
+        ),
+      );
+    } catch (err) {
+      console.error(`GitHub releases for ${owner}:`, err);
+    }
   }
   const prs = slices
     .flatMap((_, i) => nodes(data[`s${i}`]))

@@ -384,6 +384,22 @@ describe("getGitHub", () => {
     expect(gh.truncated).toBe(false);
   });
 
+  it("keeps PRs and claims when a releases read fails", async () => {
+    const search = serve({ claims: { issueCount: 1, nodes: [raw()] } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) =>
+        "owner" in JSON.parse(init.body as string).variables
+          ? new Response("{}", { status: 502 })
+          : search(url, init),
+      ),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gh = await getGitHub("t0k");
+    expect(gh.claims).toHaveLength(1);
+    expect(gh.releases).toEqual([]);
+  });
+
   it("refuses to search without GITHUB_OWNERS", async () => {
     const fetch = serve({});
     vi.stubGlobal("fetch", fetch);
