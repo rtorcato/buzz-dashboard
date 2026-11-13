@@ -102,7 +102,7 @@ docker compose up -d
 ### Image tags
 
 The `Publish image` workflow pushes `ghcr.io/rtorcato/buzz-dashboard` for
-`linux/amd64`:
+`linux/amd64` and `linux/arm64` (Apple Silicon, Raspberry Pi 4/5):
 
 | Tag | When |
 |---|---|
