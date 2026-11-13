@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AgentDetail } from "@/components/agent-detail";
 import { byDay, findAgent, runtimeFor } from "@/lib/agents";
+import { getOwner } from "@/lib/auth";
 import { envList } from "@/lib/github";
 import { getActivity, loadHive } from "@/lib/hive";
 import { loadStatusFeed } from "@/lib/status-feed";
@@ -19,9 +20,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function AgentPage({ params }: Props) {
   const { name } = await params;
-  const [{ hive }, { feed, stale }] = await Promise.all([
+  const [{ hive }, { feed, stale }, owner] = await Promise.all([
     loadHive(),
     loadStatusFeed(),
+    getOwner(),
   ]);
   // The layout already shows the relay's Alert.
   if (!hive) return null;
@@ -41,6 +43,9 @@ export default async function AgentPage({ params }: Props) {
       runtime={feed ? runtimeFor(found.agent, feed.runtime) : undefined}
       feed={feed && { publishedAt: feed.publishedAt, stale }}
       owners={envList("GITHUB_OWNERS")}
+      // Agent settings are admins-only; the owner is the first admin until
+      // roles land (DESIGN.md → Sign-in and roles).
+      admin={owner !== null}
     />
   );
 }

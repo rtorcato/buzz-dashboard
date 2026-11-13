@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { AgentMessages } from "@/components/agent-messages";
+import { AgentSettings } from "@/components/agent-settings";
 import {
   Avatar,
   type FeedInfo,
@@ -57,6 +58,7 @@ export function AgentDetail({
   groups,
   activity,
   owners,
+  admin = false,
 }: {
   agent: Agent;
   now: number;
@@ -68,6 +70,8 @@ export function AgentDetail({
   activity: number[] | null;
   /** GITHUB_OWNERS; the PR links hide without it. */
   owners: string[];
+  /** Signed in as the owner (the first admin): shows Agent settings. */
+  admin?: boolean;
 }) {
   const status = agentStatus(a, now, runtime);
   const week = a.daily.reduce((n, d) => n + d, 0);
@@ -177,6 +181,21 @@ export function AgentDetail({
           <Section title="Runtime" className="order-2 xl:order-none">
             <RuntimeDetail runtime={runtime} now={now} feed={feed} />
           </Section>
+          {admin && (
+            <AgentSettings
+              name={a.name}
+              className="order-2 xl:order-none"
+              data={{
+                model: runtime?.model ?? null,
+                // ponytail: no feed field for effort; the relay config reader adds it.
+                effort: null,
+                source: feed
+                  ? `From the status feed · as of ${ago(now - feed.publishedAt)}`
+                  : "Not reported",
+                stopped: runtime?.state === "stopped",
+              }}
+            />
+          )}
           <Section
             title="Recent PRs"
             className="order-3 xl:order-none"
