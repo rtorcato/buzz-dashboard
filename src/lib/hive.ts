@@ -20,7 +20,7 @@ export type Agent = {
   picture: string | null;
   /** Every identity folded into this agent: older copies and renamed ones. */
   pubkeys: string[];
-  /** Unix seconds of the newest message, or null if silent all week. */
+  /** Unix seconds of the newest message, or null if silent all week (still listed). */
   lastSeenAt: number | null;
   /** First line of the newest message. */
   workingOn: string | null;
@@ -201,6 +201,7 @@ export function buildHive(
   const profiles = new Map<string, Profile>();
   const channels = new Map<string, string>();
   const messages: NostrEvent[] = [];
+  let archiveList: NostrEvent | undefined;
   for (const event of events) {
     if (event.kind === 0) {
       const old = profiles.get(event.pubkey);
@@ -211,6 +212,10 @@ export function buildHive(
       const id = tag(event, "d");
       const name = tag(event, "name");
       if (id && name) channels.set(id, name);
+    } else if (event.kind === 13535) {
+      if (!archiveList || archiveList.created_at < event.created_at) {
+        archiveList = event;
+      }
     } else if (event.kind === 9 && event.created_at >= days[0]) {
       messages.push(event);
     }
@@ -228,10 +233,19 @@ export function buildHive(
     else byPubkey.set(m.pubkey, [m]);
   }
 
+  // NIP-IA: identities the relay archived drop off the roster; their messages
+  // stay in the feed. The relay emits kind 13535 itself and never ingests it,
+  // so the author isn't re-checked here (see the ponytail note in relay.ts).
+  const archived = new Set(
+    archiveList?.tags.filter((t) => t[0] === "p").map((t) => t[1]),
+  );
+
+  // The roster is every attested, unarchived profile, silent or not.
   // Dedupe: one card per name, folding in stale copies and aliases.
   const groups = new Map<string, Profile[]>();
   for (const p of profiles.values()) {
-    if (p.isAgent) groups.set(p.name, [...(groups.get(p.name) ?? []), p]);
+    if (p.isAgent && !archived.has(p.pubkey))
+      groups.set(p.name, [...(groups.get(p.name) ?? []), p]);
   }
 
   const agents = [...groups].map(([name, group]): Agent => {
@@ -339,7 +353,7 @@ export async function getHive(now = new Date()): Promise<Hive> {
     );
   }
   const [meta, messages] = await Promise.all([
-    queryRelay(env, [{ kinds: [0] }, { kinds: [39000] }]),
+    queryRelay(env, [{ kinds: [0] }, { kinds: [39000] }, { kinds: [13535] }]),
     queryAll(env, { kinds: [9], since: dayStarts(now)[0] }),
   ]);
   return buildHive([...meta, ...messages], now, owner);
