@@ -210,6 +210,31 @@ describe("buildHive", () => {
     expect(woz?.workingOn).toBe("PR up: #1");
     expect(feed.find((f) => f.text === "I'm Woz now")?.isAgent).toBe(false);
   });
+
+  it("lists silent attested agents and drops archived ones (NIP-IA)", () => {
+    const archive = (t: number, pubkeys: string[]) =>
+      ev(13535, "relay", t, "", [["-"], ...pubkeys.map((p) => ["p", p])]);
+    const { agents, feed } = buildHive(
+      [
+        ...events,
+        profile("hound", "Hound", "Researcher"),
+        profile("old-hound", "Hound (old)"),
+        msg("old-hound", at(7, 11), "still posting"),
+        // Only the newest snapshot counts.
+        archive(at(1, 0), ["hound"]),
+        archive(at(2, 0), ["old-hound", "bumble-old"]),
+      ],
+      now,
+      owner,
+    );
+    const byName = Object.fromEntries(agents.map((a) => [a.name, a]));
+    expect(byName.Hound).toMatchObject({ lastSeenAt: null, workingOn: null });
+    expect(byName["Hound (old)"]).toBeUndefined();
+    // An archived copy no longer folds into the current agent.
+    expect(byName.Bumble.pubkeys).toEqual(["bumble"]);
+    // History stays.
+    expect(feed.some((f) => f.text === "still posting")).toBe(true);
+  });
 });
 
 describe("isAttested", () => {

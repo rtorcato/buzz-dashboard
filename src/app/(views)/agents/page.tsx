@@ -13,11 +13,9 @@ export default async function AgentsPage() {
   ]);
   // The layout already shows the relay's Alert.
   if (!hive) return null;
-  // One card per live agent: anyone silent all week is left out (DESIGN.md).
+  // One card per rostered agent; a silent one gets the Quiet badge.
   // The cards don't show messages, so don't send them to the browser.
-  const live = hive.agents
-    .filter((a) => a.lastSeenAt !== null)
-    .map((a) => ({ ...a, messages: [] }));
+  const live = hive.agents.map((a) => ({ ...a, messages: [] }));
   const runtimes: Runtimes = {};
   for (const a of live) {
     const r = feed && runtimeFor(a, feed.runtime);
