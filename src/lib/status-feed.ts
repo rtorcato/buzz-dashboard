@@ -12,7 +12,8 @@ import { sampleFeed, sampleMode } from "./sample-data";
 // the same read-only R2 token as the Media tab.
 
 export type Runtime = {
-  state: "running" | "stopped";
+  /** "unknown" for runtimes with no on/off state (Goose agents run per turn). */
+  state: "running" | "stopped" | "unknown";
   /** Unix seconds the agent entered `state`. */
   since: number;
   /** Unix seconds of the last turn, or null if none. */
@@ -68,13 +69,16 @@ export function parseStatusFeed(json: unknown): StatusFeed | null {
   for (const [pubkey, r] of Object.entries(
     isObject(json.runtime) ? json.runtime : {},
   )) {
-    if (!isObject(r) || (r.state !== "running" && r.state !== "stopped")) {
+    if (
+      !isObject(r) ||
+      !["running", "stopped", "unknown"].includes(r.state as string)
+    ) {
       continue;
     }
     const since = secs(r.since);
     if (Number.isNaN(since)) continue;
     runtime[pubkey] = {
-      state: r.state,
+      state: r.state as Runtime["state"],
       since,
       lastTurn: orNull(secs(r.last_turn)),
       model: typeof r.model === "string" ? r.model : null,

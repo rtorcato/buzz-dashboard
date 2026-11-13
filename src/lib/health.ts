@@ -141,7 +141,10 @@ export type HealthInput = {
     name: string;
     lastSeenAt: number | null;
     /** From the status feed, when it reports the agent. */
-    runtime?: { state: "running" | "stopped"; lastTurn: number | null };
+    runtime?: {
+      state: "running" | "stopped" | "unknown";
+      lastTurn: number | null;
+    };
   }[];
   /** Open claims with a known agent, e.g. "example-cli#124". */
   claims: { agent: string; key: string; claimedAt: number }[];
@@ -220,9 +223,10 @@ export function buildHealth(input: HealthInput): AgentHealth[] {
     return {
       name: a.name,
       status,
-      online: a.runtime
-        ? a.runtime.state === "running"
-        : quietFor <= ONLINE_WITHIN_S,
+      online:
+        a.runtime && a.runtime.state !== "unknown"
+          ? a.runtime.state === "running"
+          : quietFor <= ONLINE_WITHIN_S,
       range: range.get(a.name) ?? zero(),
       hour: h,
       hourly,

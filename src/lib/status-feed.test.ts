@@ -102,6 +102,27 @@ describe("parseStatusFeed", () => {
     });
     expect(feed?.runtime).toEqual({});
   });
+
+  it("keeps Goose agents reported as unknown", () => {
+    const feed = parseStatusFeed({
+      version: 1,
+      published_at: "2026-11-13T19:05:00Z",
+      runtime: {
+        g: {
+          state: "unknown",
+          since: "2026-11-13T19:02:12Z",
+          last_turn: "2026-11-13T19:02:12Z",
+          model: null,
+        },
+      },
+    });
+    expect(feed?.runtime.g).toEqual({
+      state: "unknown",
+      since: T("2026-11-13T19:02:12Z"),
+      lastTurn: T("2026-11-13T19:02:12Z"),
+      model: null,
+    });
+  });
 });
 
 describe("isStale", () => {
