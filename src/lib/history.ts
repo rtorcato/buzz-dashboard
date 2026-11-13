@@ -72,6 +72,31 @@ export async function migrateHistory() {
   await migrate(historyDb(), {
     migrationsFolder: path.join(process.cwd(), "drizzle"),
   });
+  for (const statement of hiveStatements(process.env.BUZZ_RELAY_URL)) {
+    await historyDb().execute(sql.raw(statement));
+  }
+}
+
+const HIVE_TABLES = ["events", "cost_points", "agent_events", "settings"];
+
+/**
+ * #116: the relay URL becomes each history table's `hive` default, and rows
+ * without one get it, so no insert has to name the hive. [] without a relay.
+ */
+export function hiveStatements(relayUrl: string | undefined): string[] {
+  let url: URL;
+  try {
+    url = new URL(relayUrl ?? "");
+  } catch {
+    return [];
+  }
+  if (url.protocol !== "wss:" && url.protocol !== "ws:") return [];
+  // ALTER ... SET DEFAULT takes no bind parameters, so quote it as a literal.
+  const hive = `'${url.href.replace(/'/g, "''")}'`;
+  return HIVE_TABLES.flatMap((t) => [
+    `ALTER TABLE "${t}" ALTER COLUMN "hive" SET DEFAULT ${hive}`,
+    `UPDATE "${t}" SET "hive" = ${hive} WHERE "hive" IS NULL`,
+  ]);
 }
 
 /** Deletes rows past the retention window; returns how many. */

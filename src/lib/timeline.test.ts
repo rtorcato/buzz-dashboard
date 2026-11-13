@@ -29,6 +29,7 @@ const event = (e: Partial<HistoryEvent>): HistoryEvent => ({
   body: null,
   data: null,
   ingestedAt: new Date(),
+  hive: null,
   ...e,
 });
 
@@ -124,6 +125,40 @@ describe("toRow", () => {
       verb: "posted in #example-app",
       target: null,
       chips: ["#example-app"],
+    });
+  });
+
+  it("builds label and release rows (#54)", () => {
+    const label = (action: string) =>
+      toRow(
+        event({
+          kind: "labelled",
+          actor: "rtorcato",
+          repo: "o/example-app",
+          data: { number: 42, label: "ai-ready", action },
+        }),
+        names,
+      );
+    expect(label("added")).toMatchObject({
+      verb: "added ai-ready to",
+      target: "example-app#42",
+    });
+    expect(label("removed").verb).toBe("removed ai-ready from");
+    expect(
+      toRow(
+        event({
+          kind: "released",
+          actor: "github-actions[bot]",
+          repo: "o/example-app",
+          title: "v1.2.0",
+          data: { tag: "v1.2.0" },
+        }),
+        names,
+      ),
+    ).toMatchObject({
+      verb: "released",
+      target: "example-app v1.2.0",
+      chips: ["example-app"],
     });
   });
 

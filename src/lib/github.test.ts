@@ -22,6 +22,7 @@ const {
   prQueries,
   toClaim,
   toItem,
+  toReleases,
 } = await import("./github");
 
 const header = (name: string) =>
@@ -237,6 +238,91 @@ describe("queries", () => {
   });
 });
 
+describe("label events and releases (#54)", () => {
+  it("reads label changes from the timeline, oldest first", () => {
+    const item = toItem(
+      raw({
+        timelineItems: {
+          nodes: [
+            {
+              __typename: "LabeledEvent",
+              createdAt: "2026-10-18T10:00:00Z",
+              actor: { login: "rtorcato" },
+              label: { name: "ai-ready" },
+            },
+            null,
+            {
+              __typename: "UnlabeledEvent",
+              createdAt: "2026-10-18T11:00:00Z",
+              actor: null,
+              label: { name: "ai-ready" },
+            },
+          ],
+        },
+      }),
+    );
+    expect(item.labelEvents).toEqual([
+      {
+        label: "ai-ready",
+        action: "added",
+        at: at("2026-10-18T10:00:00Z"),
+        actor: "rtorcato",
+      },
+      {
+        label: "ai-ready",
+        action: "removed",
+        at: at("2026-10-18T11:00:00Z"),
+        actor: "ghost",
+      },
+    ]);
+  });
+
+  it("keeps published releases and drops drafts", () => {
+    const rel = (over: object) => ({
+      name: "",
+      tagName: "v1.0.0",
+      url: "u",
+      publishedAt: "2026-10-18T10:00:00Z",
+      isDraft: false,
+      isPrerelease: false,
+      author: { login: "github-actions[bot]" },
+      ...over,
+    });
+    expect(
+      toReleases({
+        repositoryOwner: {
+          repositories: {
+            nodes: [
+              {
+                nameWithOwner: "acme/app",
+                releases: {
+                  nodes: [
+                    rel({}),
+                    rel({ tagName: "v2.0.0", isDraft: true }),
+                    rel({ tagName: "v1.1.0", publishedAt: null }),
+                  ],
+                },
+              },
+              null,
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        repo: "acme/app",
+        tag: "v1.0.0",
+        name: "v1.0.0",
+        url: "u",
+        publishedAt: at("2026-10-18T10:00:00Z"),
+        author: "github-actions[bot]",
+        prerelease: false,
+      },
+    ]);
+    expect(toReleases({ repositoryOwner: null })).toEqual([]);
+  });
+});
+
 describe("getGitHub", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -280,9 +366,9 @@ describe("getGitHub", () => {
     vi.stubGlobal("fetch", fetch);
 
     const gh = await getGitHub("t0k", new Date("2026-10-19T14:00:00Z"));
-    // 31 searches, 4 per request.
-    expect(fetch).toHaveBeenCalledTimes(8);
-    const sent = fetch.mock.calls.map(([url, init]) => {
+    // 31 searches, 4 per request, then one releases read per owner.
+    expect(fetch).toHaveBeenCalledTimes(10);
+    const sent = fetch.mock.calls.slice(0, 8).map(([url, init]) => {
       expect(url).toBe("https://api.github.com/graphql");
       expect(new Headers(init.headers).get("Authorization")).toBe("Bearer t0k");
       return JSON.parse(init.body as string).variables;
@@ -296,6 +382,22 @@ describe("getGitHub", () => {
     ]);
     expect(gh.prs.map((p) => p.number)).toEqual([8]);
     expect(gh.truncated).toBe(false);
+  });
+
+  it("keeps PRs and claims when a releases read fails", async () => {
+    const search = serve({ claims: { issueCount: 1, nodes: [raw()] } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) =>
+        "owner" in JSON.parse(init.body as string).variables
+          ? new Response("{}", { status: 502 })
+          : search(url, init),
+      ),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const gh = await getGitHub("t0k");
+    expect(gh.claims).toHaveLength(1);
+    expect(gh.releases).toEqual([]);
   });
 
   it("refuses to search without GITHUB_OWNERS", async () => {

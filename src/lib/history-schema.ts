@@ -9,6 +9,11 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+// The relay a row came from (#116), for multi-hive (#74) later. Not in any key
+// yet. migrateHistory makes BUZZ_RELAY_URL the default and fills old rows, so
+// no insert has to set it.
+const hive = () => text("hive");
+
 // The history store (#39). One append-only table of events from the sources
 // the dashboard already reads. `pnpm db:generate` turns a change here into a
 // new migration under drizzle/; the server applies it on start.
@@ -38,6 +43,7 @@ export const events = pgTable(
     ingestedAt: timestamp("ingested_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    hive: hive(),
   },
   // The primary key makes ingest idempotent: a re-read inserts nothing new.
   (t) => [
@@ -72,6 +78,7 @@ export const costPoints = pgTable(
     value: doublePrecision("value").notNull(),
     /** The turn's Buzz channel id; only the owner signer's reports (#43) have one. */
     channel: text("channel"),
+    hive: hive(),
   },
   (t) => [
     primaryKey({
@@ -100,6 +107,7 @@ export const agentEvents = pgTable(
     reason: text("reason"),
     /** An OTel api_error's HTTP status code. */
     status: integer("status"),
+    hive: hive(),
   },
   (t) => [index("agent_events_at_idx").on(t.at)],
 );
@@ -113,4 +121,5 @@ export const settings = pgTable("settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+  hive: hive(),
 });
