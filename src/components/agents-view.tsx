@@ -385,8 +385,8 @@ export function RuntimeRow({
     );
   }
   const running = r.state === "running";
-  // ponytail: the feed's last_turn is always null today (Desktop logs no
-  // per-turn line), so fall back to the relay's last message time.
+  // Desktop-log runtimes have no last_turn, so fall back to the relay's last
+  // message time. Goose runtimes report it.
   const turn = r.lastTurn ?? lastSeenAt;
   return (
     <div className="mt-4 flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs">
@@ -400,14 +400,20 @@ export function RuntimeRow({
             running ? "font-medium text-success" : "text-muted-foreground"
           }
         >
-          {running ? "Running" : "Stopped"}
-        </span>
-        <span className="text-muted-foreground tabular-nums">
-          {" · "}
           {running
-            ? `up ${formatAge((now - r.since) * 1000)}`
-            : ago(now - r.since)}
+            ? "Running"
+            : r.state === "stopped"
+              ? "Stopped"
+              : "State not reported"}
         </span>
+        {r.state !== "unknown" && (
+          <span className="text-muted-foreground tabular-nums">
+            {" · "}
+            {running
+              ? `up ${formatAge((now - r.since) * 1000)}`
+              : ago(now - r.since)}
+          </span>
+        )}
         {feed?.stale && (
           <span className="text-warning tabular-nums">
             {" · as of "}

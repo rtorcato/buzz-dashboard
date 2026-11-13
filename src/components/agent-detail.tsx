@@ -37,6 +37,13 @@ import type { Agent } from "@/lib/hive";
 import { npubEncode } from "@/lib/npub";
 import type { Runtime } from "@/lib/status-feed";
 
+const STATE_LABEL = {
+  running: "Running",
+  stopped: "Stopped",
+  // Goose agents run per turn, so they have no on/off state.
+  unknown: "Not reported",
+} as const;
+
 // DESIGN.md → "Agent page" (#27). Read-only: every action is an outbound link.
 // Claims and PRs aren't read on this page yet, so those sections say so.
 
@@ -331,8 +338,12 @@ function RuntimeDetail({
     );
   }
   const rows: [string, ReactNode][] = [
-    ["State", r.state === "running" ? "Running" : "Stopped"],
-    [r.state === "running" ? "Since" : "Stopped at", ago(now - r.since)],
+    ["State", STATE_LABEL[r.state]],
+    ...(r.state === "unknown"
+      ? []
+      : ([
+          [r.state === "running" ? "Since" : "Stopped at", ago(now - r.since)],
+        ] as [string, ReactNode][])),
     ["Last turn", r.lastTurn === null ? "Not reported" : ago(now - r.lastTurn)],
     [
       "Model",
