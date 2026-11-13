@@ -128,6 +128,30 @@ const safePicture = (url: unknown) =>
     ? url
     : null;
 
+/** The sha of a picture hosted on our relay's /media/, which needs auth. */
+export function relayMediaSha(picture: string, relayUrl: string) {
+  try {
+    const url = new URL(picture);
+    const relay = new URL(relayUrl);
+    if (url.protocol !== "https:" || url.host !== relay.host) return null;
+    return (
+      /^\/media\/([0-9a-f]{64})(\.[a-z0-9]+)?$/.exec(url.pathname)?.[1] ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+// A browser can't load relay media, so those go through /api/avatar (#112).
+export const avatarSrc = (
+  picture: string | null,
+  pubkey: string,
+  relayUrl: string,
+) =>
+  picture && relayMediaSha(picture, relayUrl)
+    ? `/api/avatar/${pubkey}`
+    : picture;
+
 // NIP-OA: the owner signs sha256("nostr:agent-auth:<agent>:<conditions>").
 // ponytail: checks who signed, not the conditions; profiles carry none today.
 export function isAttested(event: NostrEvent, owner: string): boolean {
@@ -342,7 +366,11 @@ export async function getHive(now = new Date()): Promise<Hive> {
     queryRelay(env, [{ kinds: [0] }, { kinds: [39000] }]),
     queryAll(env, { kinds: [9], since: dayStarts(now)[0] }),
   ]);
-  return buildHive([...meta, ...messages], now, owner);
+  const hive = buildHive([...meta, ...messages], now, owner);
+  for (const a of hive.agents) {
+    a.picture = avatarSrc(a.picture, a.pubkeys[0], env.buzzRelayUrl);
+  }
+  return hive;
 }
 
 const ACTIVITY_DAYS = 30;

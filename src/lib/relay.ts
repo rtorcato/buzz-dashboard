@@ -30,30 +30,40 @@ type RelayEnv = Pick<
 
 const toHex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
 
-// NIP-42 AUTH event (kind 22242). The relay refuses every REQ until this is
-// accepted. This is the only event the dashboard ever signs, and it is never
-// stored or relayed; nothing here can post to a channel.
+// The dashboard signs only auth events: NIP-42 AUTH (kind 22242) here and
+// the Blossom media get (kind 24242) in avatar.ts. Neither is stored or
+// relayed; nothing here can post to a channel.
+export function signEvent(
+  privateKey: string,
+  kind: number,
+  tags: string[][],
+  content: string,
+  now: number,
+): NostrEvent {
+  if (!/^[0-9a-f]{64}$/i.test(privateKey)) {
+    throw new Error("BUZZ_PRIVATE_KEY must be a 64-character hex key");
+  }
+  const secret = Buffer.from(privateKey, "hex");
+  const pubkey = toHex(schnorr.getPublicKey(secret));
+  const id = createHash("sha256")
+    .update(JSON.stringify([0, pubkey, now, kind, tags, content]))
+    .digest("hex");
+  const sig = toHex(schnorr.sign(Buffer.from(id, "hex"), secret));
+  return { pubkey, created_at: now, kind, tags, content, id, sig };
+}
+
+// NIP-42 AUTH event. The relay refuses every REQ until this is accepted.
 export function signAuthEvent(
   env: RelayEnv,
   challenge: string,
   now = Math.floor(Date.now() / 1000),
 ): NostrEvent {
-  if (!/^[0-9a-f]{64}$/i.test(env.buzzPrivateKey)) {
-    throw new Error("BUZZ_PRIVATE_KEY must be a 64-character hex key");
-  }
-  const secret = Buffer.from(env.buzzPrivateKey, "hex");
   const tags = [
     ["relay", env.buzzRelayUrl],
     ["challenge", challenge],
   ];
   if (env.buzzAuthTag) tags.push(JSON.parse(env.buzzAuthTag));
-  const pubkey = toHex(schnorr.getPublicKey(secret));
-  const unsigned = { pubkey, created_at: now, kind: 22242, tags, content: "" };
-  const id = createHash("sha256")
-    .update(JSON.stringify([0, pubkey, now, 22242, tags, ""]))
-    .digest("hex");
-  const sig = toHex(schnorr.sign(Buffer.from(id, "hex"), secret));
-  return { ...unsigned, id, sig };
+  return signEvent(env.buzzPrivateKey, 22242, tags, "", now);
 }
 
 /** Signs the relay's AUTH challenge; the dashboard's own key by default. */

@@ -449,7 +449,7 @@ export function Avatar({
   /** Size and initials text size. */
   className?: string;
 }) {
-  // Relay-hosted pictures need auth, so fall back to initials when one fails.
+  // Relay pictures come through /api/avatar (#112); initials when one fails.
   const [failed, setFailed] = useState(false);
   if (a.picture && !failed) {
     return (
