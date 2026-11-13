@@ -215,6 +215,20 @@ The dashboard can't publish a config revision yet (see "Check during the build" 
   - Buttons: outline "`copy` Copy steps" and primary "Done", both `whitespace-nowrap`. Copying puts the steps on the clipboard as plain numbered text and shows a `Sonner` toast reading "Steps copied". Nothing is ever saved or reverted.
 - **Effort values:** default, low, medium, high, xhigh and max, with a muted footer in the picker reading "default = the model decides". **Check during the build:** cut this list down to what Desktop's Effort field accepts for `claude-acp`.
 
+### Edit profile (#113)
+
+The avatar, display name and About live in the agent's own profile event, and only the agent's key can sign it. Buzz Desktop holds that key and this dashboard never does, so the dashboard points to Desktop the same way the #109 Agent settings card does: same modal shell, same steps, same buttons. Mockups: `buzz-dashboard/agent-profile-*` on R2.
+
+- **Button:** an outline "`user-pen` Edit profile", the first button in the hero's row, before Open in Buzz and PRs. Admins only, like Agent settings. Viewers never see it.
+- **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Edit the profile in Buzz Desktop".
+  - A Change `Select` (Avatar, Display name, About), with the current avatar (`Avatar`, 40px) beside it when Avatar is picked.
+  - Display name and About get a New value `Input` (About a `Textarea`), so the steps fill in live: "Set Display name to **Bumblebee**". Under it, a muted "Now Bumble" shows the current value.
+  - Three numbered steps with the agent's real name: "Open Buzz Desktop → Agents → **Bumble** → Edit", then "Click the avatar and pick a new image" (or "Set Display name to **…**"), then "Save. The new picture shows here within a minute."
+  - A muted `key-round` line: "Only Bumble's own key can sign its profile. Buzz Desktop holds that key; this dashboard never does."
+  - Buttons: outline "`copy` Copy steps" and primary "Done", the same as #109. Nothing is ever saved here.
+- **No deep link.** A dashboard in a container can't reach the Desktop app on your machine.
+- **Check during the build:** the "within a minute" line only holds once #112 (the avatar proxy) lands. Until then, relay pictures show as initials.
+
 ### Saving
 
 Save never writes live. "Review and save" opens a `Dialog` (a full-screen `Sheet` on phones):
@@ -668,7 +682,7 @@ Motion explains a change. It never decorates. It runs only when a value changes,
 | Card hover | `translateY(-2px)` and a darker border | 150ms | transitions.dev card lift |
 | Running dot | one `ping` when an agent goes to Running, then a steady dot | 1 × 1s | Tailwind `animate-ping`, run once. Never loop it: 12 pulsing dots is noise. |
 | Agents card → agent page | native View Transitions: `view-transition-name` on the avatar and the name, so they morph into the hero | 250ms, same easing | Next.js `viewTransition` (experimental flag), no extra package |
-| Agent settings modal opens / closes, copy confirm | fade and scale from 96%, overlay fades; copy icon swaps to `check` (scale 0.8→1) for 1.5s | 200ms in, 150ms out, `cubic-bezier(0.23, 1, 0.32, 1)`; icon 150ms | shadcn `Dialog`. Reduced motion: opacity only. |
+| Agent settings and Edit profile modals open / close, copy confirm | fade and scale from 96%, overlay fades; copy icon swaps to `check` (scale 0.8→1) for 1.5s | 200ms in, 150ms out, `cubic-bezier(0.23, 1, 0.32, 1)`; icon 150ms | shadcn `Dialog`. Reduced motion: opacity only. |
 
 No Lottie on these screens. A looping illustration pulls the eye on a screen you only glance at. Keep it for a future "All clear" state.
 
