@@ -2,6 +2,7 @@ import "server-only";
 
 import { checkEnv } from "@rtorcato/js-common/env";
 import { z } from "zod";
+import { mergeConfig, readSavedConfig } from "./config-store";
 
 // Credentials are read on the server only. The `server-only` import makes the
 // build fail if a client component ever pulls this module in.
@@ -46,8 +47,9 @@ const EnvSchema = z.object({
 
 export function readServerEnv(
   source: Record<string, string | undefined> = process.env,
+  saved = readSavedConfig(),
 ): ServerEnv {
-  const env = checkEnv(EnvSchema, source);
+  const env = checkEnv(EnvSchema, mergeConfig(source, saved));
   const owners = (env.BUZZ_OWNER_PUBKEY || tagOwner(env.BUZZ_AUTH_TAG) || "")
     .split(/[\s,]+/)
     .filter(Boolean)
