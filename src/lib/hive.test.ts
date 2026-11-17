@@ -341,4 +341,39 @@ describe("getHive", () => {
     expect(woz.messages).toHaveLength(1200);
     expect(woz.daily).toEqual([0, 200, 0, 1, 0, 0, 999]);
   });
+
+  it("pages profiles past the cap, counting events the relay dropped", async () => {
+    queryRelay.mockReset();
+    const prof = (pk: string, created_at: number) => ({
+      ...profile(pk, pk),
+      id: pk,
+      created_at,
+    });
+    // A full page of 1000 where one forged event was dropped: 999 survive.
+    const page1 = Object.assign(
+      Array.from({ length: 999 }, (_, i) =>
+        prof(`p${i}`, i === 998 ? at(3, 10) : at(7, 9)),
+      ),
+      { received: 1000 },
+    );
+    const page2 = [prof("p998", at(3, 10)), prof("late", at(1, 9))];
+    queryRelay.mockImplementation(
+      async (_env, [filter]: { kinds: number[]; until?: number }[]) => {
+        if (!filter.kinds.includes(0)) return [];
+        return filter.until === undefined ? page1 : page2;
+      },
+    );
+
+    const hive = await getHive(now);
+    // The profile only the second page carried still makes the roster.
+    expect(hive.agents.map((a) => a.name)).toContain("late");
+    const profileQueries = queryRelay.mock.calls
+      .map(([, [filter]]) => filter)
+      .filter((f) => f.kinds.includes(0));
+    expect(profileQueries.map((f) => f.until)).toEqual([undefined, at(3, 10)]);
+    const channelQueries = queryRelay.mock.calls.filter(([, [f]]) =>
+      f.kinds.includes(39000),
+    );
+    expect(channelQueries).toHaveLength(1);
+  });
 });
