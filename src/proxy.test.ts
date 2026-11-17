@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({}));
+const setup = vi.hoisted(() => ({ open: false }));
+vi.mock("./lib/setup", () => ({ setupOpen: () => setup.open }));
 
 const { proxy } = await import("./proxy");
 const { newSession, PROXY_SECRET_HEADER, readsNeedSignIn, SESSION_COOKIE } =
@@ -90,5 +92,27 @@ describe("proxy", () => {
   it("fails closed when sign-in isn't configured", () => {
     gate("");
     expect(passed(proxy(req("/agents", owner)))).toBe(false);
+  });
+});
+
+describe("setup gate (#73)", () => {
+  afterEach(() => {
+    setup.open = false;
+  });
+
+  it("sends everything to /setup while it is open, except setup and health", () => {
+    setup.open = true;
+    const to = (path: string) => proxy(req(path)).headers.get("location");
+    expect(to("/agents")).toBe("http://hive.local/setup");
+    expect(passed(proxy(req("/setup")))).toBe(true);
+    expect(passed(proxy(req("/api/setup/unlock")))).toBe(true);
+    expect(passed(proxy(req("/api/health")))).toBe(true);
+    expect(proxy(req("/api/alerts")).status).toBe(503);
+  });
+
+  it("removes /setup once it is closed", () => {
+    expect(proxy(req("/setup")).headers.get("location")).toBe(
+      "http://hive.local/",
+    );
   });
 });
