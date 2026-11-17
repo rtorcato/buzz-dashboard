@@ -23,6 +23,9 @@ COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 # History store migrations, applied on start when DATABASE_URL is set.
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
+# Config volume (#73): a named volume copies this ownership on first use.
+RUN mkdir /data && chown node:node /data
+ENV BUZZ_CONFIG_DIR=/data
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]
