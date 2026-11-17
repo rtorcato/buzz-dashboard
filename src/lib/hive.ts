@@ -259,7 +259,7 @@ export function buildHive(
 
   // NIP-IA: identities the relay archived drop off the roster; their messages
   // stay in the feed. The relay emits kind 13535 itself and never ingests it,
-  // so the author isn't re-checked here (see the ponytail note in relay.ts).
+  // so the author isn't re-checked here; queryRelay has verified its signature.
   const archived = new Set(
     archiveList?.tags.filter((t) => t[0] === "p").map((t) => t[1]),
   );
@@ -360,7 +360,8 @@ export async function queryAll(
       sign,
     );
     for (const e of batch) seen.set(e.id, e);
-    if (batch.length < RELAY_CAP) break;
+    // Count what the relay sent, so a dropped bad event can't end paging early.
+    if (!batch.length || (batch.received ?? batch.length) < RELAY_CAP) break;
     // `until` is inclusive, so the oldest second is fetched again and deduped.
     until = Math.min(...batch.map((e) => e.created_at));
   }
@@ -376,11 +377,18 @@ export async function getHive(now = new Date()): Promise<Hive> {
       "BUZZ_OWNER_PUBKEY must be the owner's 64-character hex key",
     );
   }
-  const [meta, messages] = await Promise.all([
-    queryRelay(env, [{ kinds: [0] }, { kinds: [39000] }, { kinds: [13535] }]),
+  // Profiles and channels page past the relay cap like messages do (#114).
+  const [profiles, channels, archive, messages] = await Promise.all([
+    queryAll(env, { kinds: [0] }),
+    queryAll(env, { kinds: [39000] }),
+    queryRelay(env, [{ kinds: [13535] }]),
     queryAll(env, { kinds: [9], since: dayStarts(now)[0] }),
   ]);
-  const hive = buildHive([...meta, ...messages], now, owner);
+  const hive = buildHive(
+    [...profiles, ...channels, ...archive, ...messages],
+    now,
+    owner,
+  );
   for (const a of hive.agents) {
     a.picture = avatarSrc(a.picture, a.pubkeys[0], env.buzzRelayUrl);
   }

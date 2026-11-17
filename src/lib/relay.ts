@@ -66,29 +66,53 @@ export function signAuthEvent(
   return signEvent(env.buzzPrivateKey, 22242, tags, "", now);
 }
 
+/** True when the event's id is its NIP-01 hash and `sig` signs that id. */
+export function verifyEvent(e: NostrEvent): boolean {
+  try {
+    const id = createHash("sha256")
+      .update(
+        JSON.stringify([0, e.pubkey, e.created_at, e.kind, e.tags, e.content]),
+      )
+      .digest("hex");
+    return (
+      id === e.id &&
+      schnorr.verify(
+        Buffer.from(e.sig, "hex"),
+        Buffer.from(id, "hex"),
+        Buffer.from(e.pubkey, "hex"),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Verified events, plus how many the relay sent before any were dropped. */
+export type RelayEvents = NostrEvent[] & { received?: number };
+
 /** Signs the relay's AUTH challenge; the dashboard's own key by default. */
 export type AuthSigner = (
   challenge: string,
 ) => NostrEvent | Promise<NostrEvent>;
 
 // One connection, one AUTH, one REQ: resolves with every stored event that
-// matches any of the filters once the relay sends EOSE.
-// ponytail: trusts the relay's signature checks rather than re-verifying each
-// event; add verification if the dashboard ever reads from a relay we don't run.
+// matches any of the filters once the relay sends EOSE. Events whose id or
+// signature doesn't check out are dropped (#114).
 export function queryRelay(
   env: RelayEnv,
   filters: Filter[],
   timeoutMs = 10_000,
   sign: AuthSigner = (challenge) => signAuthEvent(env, challenge),
-): Promise<NostrEvent[]> {
+): Promise<RelayEvents> {
   return new Promise((resolve, reject) => {
-    const events: NostrEvent[] = [];
+    const events: RelayEvents = [];
+    let received = 0;
     const ws = new WebSocket(env.buzzRelayUrl);
     const finish = (err?: Error) => {
       clearTimeout(timer);
       ws.close();
       if (err) reject(err);
-      else resolve(events);
+      else resolve(Object.assign(events, { received }));
     };
     const timer = setTimeout(
       () => finish(new Error("Buzz relay timed out")),
@@ -122,9 +146,12 @@ export function queryRelay(
             ws.send(JSON.stringify(["REQ", "dashboard", ...filters]));
           }
           break;
-        case "EVENT":
-          events.push(msg[2] as NostrEvent);
+        case "EVENT": {
+          received++;
+          const event = msg[2] as NostrEvent;
+          if (verifyEvent(event)) events.push(event);
           break;
+        }
         case "EOSE":
           finish();
           break;
