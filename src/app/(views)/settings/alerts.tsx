@@ -9,6 +9,7 @@ import {
   shownTarget,
 } from "@/lib/alerts";
 import { authMode, getOwner } from "@/lib/auth";
+import { loadDmSetup } from "@/lib/buzz-dm";
 import { historyEnabled } from "@/lib/history";
 import { OwnerNote } from "./sources";
 
@@ -26,6 +27,7 @@ export async function AlertsTab() {
     (Object.fromEntries(
       RULE_IDS.map((id) => [id, ruleOf(config, id)]),
     ) as Record<RuleId, Rule>);
+  const dm = loadDmSetup();
   return (
     <div className="space-y-6">
       <OwnerNote what="alerts" owner={owner} mode={authMode()} />
@@ -46,6 +48,7 @@ export async function AlertsTab() {
           rules={rules}
           quiet={config.quiet}
           canEdit={owner !== null}
+          dm={dm.ok ? null : dm.reason}
         />
       )}
     </div>

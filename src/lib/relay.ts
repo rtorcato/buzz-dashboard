@@ -30,9 +30,10 @@ type RelayEnv = Pick<
 
 const toHex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
 
-// The dashboard signs only auth events: NIP-42 AUTH (kind 22242) here and
-// the Blossom media get (kind 24242) in avatar.ts. Neither is stored or
-// relayed; nothing here can post to a channel.
+// This signs auth events: NIP-42 AUTH (kind 22242) here and the Blossom media
+// get (kind 24242) in avatar.ts. Neither is stored or relayed. The one
+// exception is buzz-dm.ts, which signs the owner DM (#83) with a key that is
+// refused if it belongs to an owner.
 export function signEvent(
   privateKey: string,
   kind: number,

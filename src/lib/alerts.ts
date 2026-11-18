@@ -4,7 +4,7 @@ import { z } from "zod";
 // history store. Every alert is a Needs you item the owner hasn't cleared yet,
 // so the rules read the same rows the card shows.
 
-export const CHANNEL_TYPES = ["ntfy", "slack", "webhook"] as const;
+export const CHANNEL_TYPES = ["ntfy", "slack", "webhook", "buzz"] as const;
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
 
 export const RULE_IDS = [
@@ -93,6 +93,9 @@ export const RULES: Record<RuleId, RuleMeta> = {
   },
 };
 
+/** A Buzz DM channel has no URL: it always goes to the owner (#83). */
+export const BUZZ_TARGET = "buzz-dm";
+
 export const ChannelSchema = z.object({
   id: z.string(),
   type: z.enum(CHANNEL_TYPES),
@@ -167,7 +170,11 @@ export function elide(raw: string): string {
  * a signed-out viewer gets no part of it: not the host, not a path prefix (#85).
  */
 export const shownTarget = (raw: string, signedIn: boolean) =>
-  signedIn ? elide(raw) : "Hidden until you sign in";
+  raw === BUZZ_TARGET
+    ? "A direct message to the owner"
+    : signedIn
+      ? elide(raw)
+      : "Hidden until you sign in";
 
 /** Quiet hours run 10 PM to 8 AM on the server clock. */
 export const isQuietHour = (d: Date) => d.getHours() >= 22 || d.getHours() < 8;

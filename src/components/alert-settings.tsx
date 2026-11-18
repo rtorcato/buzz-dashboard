@@ -11,7 +11,6 @@ import {
   HeartPulse,
   KeyRound,
   type LucideIcon,
-  Mail,
   MessageSquare,
   Moon,
   OctagonAlert,
@@ -76,6 +75,12 @@ const CHANNEL: Record<
     badge: "JSON",
     hint: "https://example.com/hooks/hive",
   },
+  buzz: {
+    name: "Buzz DM",
+    icon: MessageSquare,
+    badge: "Opt-in",
+    hint: "",
+  },
 };
 
 const RULE_ICON: Record<RuleId, LucideIcon> = {
@@ -87,10 +92,13 @@ const RULE_ICON: Record<RuleId, LucideIcon> = {
   budget: Coins,
 };
 
-const typeItems = Object.entries(CHANNEL).map(([value, c]) => ({
-  value,
-  label: c.name,
-}));
+// Buzz DM has no URL, so it isn't added from the form but with "Set up".
+const typeItems = Object.entries(CHANNEL)
+  .filter(([value]) => value !== "buzz")
+  .map(([value, c]) => ({
+    value,
+    label: c.name,
+  }));
 
 /** POSTs one change; returns an error line, or null once it saved. */
 export async function post(body: object): Promise<string | null> {
@@ -116,11 +124,14 @@ export function AlertSettings({
   rules,
   quiet,
   canEdit,
+  dm,
 }: {
   channels: ChannelView[];
   rules: Record<RuleId, Rule>;
   quiet: boolean;
   canEdit: boolean;
+  /** Why Buzz DM can't be set up yet, or null when it can. */
+  dm: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -220,32 +231,38 @@ export function AlertSettings({
               you.
             </li>
           )}
-          {/* ponytail: email needs an SMTP client and Buzz DM a posting key
-              of its own; both are follow-ups, so their rows stay dimmed. */}
-          <ComingRow
-            icon={Mail}
-            name="Email"
-            detail="Uses your SMTP settings · not available yet"
-          />
-          <ComingRow
-            icon={MessageSquare}
-            name="Buzz DM"
-            badges={
-              <>
-                <Chip>Opt-in</Chip>
-                <span className="inline-flex items-center gap-1 rounded-md border border-warning/20 bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
-                  <KeyRound className="size-3" aria-hidden />
-                  Needs a posting key
-                </span>
-              </>
-            }
-            detail="The dashboard never posts as the hive. To get alerts as a DM, give it a key of its own that can only send to you."
-            action={
-              <Button variant="outline" size="sm" disabled>
-                Set up
-              </Button>
-            }
-          />
+          {!channels.some((c) => c.type === "buzz") && (
+            <ComingRow
+              icon={MessageSquare}
+              name="Buzz DM"
+              badges={
+                <>
+                  <Chip>Opt-in</Chip>
+                  {dm !== null && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-warning/20 bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
+                      <KeyRound className="size-3" aria-hidden />
+                      Needs a posting key
+                    </span>
+                  )}
+                </>
+              }
+              detail={
+                dm ??
+                "The dashboard never posts as the hive. Alerts arrive as a DM from the dashboard's own key, sent only to you."
+              }
+              dim={dm !== null}
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={dm !== null || !canEdit || busy}
+                  onClick={() => run({ op: "add", type: "buzz" })}
+                >
+                  Set up
+                </Button>
+              }
+            />
+          )}
         </ul>
       </Card>
 
@@ -557,15 +574,22 @@ function ComingRow({
   badges,
   detail,
   action,
+  dim,
 }: {
   icon: LucideIcon;
   name: string;
   badges?: ReactNode;
   detail: string;
   action?: ReactNode;
+  dim?: boolean;
 }) {
   return (
-    <li className="flex items-center gap-3 px-4 py-3 opacity-60 sm:px-6">
+    <li
+      className={cn(
+        "flex items-center gap-3 px-4 py-3 sm:px-6",
+        dim && "opacity-60",
+      )}
+    >
       <IconTile icon={icon} />
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-2 font-medium">

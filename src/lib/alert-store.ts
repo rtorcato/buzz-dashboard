@@ -6,6 +6,7 @@ import {
   AlertConfigSchema,
   AlertStateSchema,
   alertRequest,
+  BUZZ_TARGET,
   type Channel,
   type ChannelType,
   channelUrl,
@@ -22,6 +23,13 @@ import {
   ruleOf,
 } from "./alerts";
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
+import {
+  dmText,
+  loadDmSetup,
+  openDm,
+  RelayError,
+  sendDmMessage,
+} from "./buzz-dm";
 import { formatUsd } from "./cost";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
@@ -91,17 +99,28 @@ export class AlertInputError extends Error {}
 
 /** Adds a channel, and adds it to every rule that's on. */
 export async function addChannel(type: ChannelType, target: string) {
-  const url = channelUrl(target);
-  if (!url) {
-    throw new AlertInputError(
-      "Use an http(s) URL without a user name or password",
-    );
-  }
   const config = await loadAlerts();
+  let address = BUZZ_TARGET;
+  if (type === "buzz") {
+    // Opt-in, and only with a posting key of its own (#83).
+    const setup = loadDmSetup();
+    if (!setup.ok) throw new AlertInputError(setup.reason);
+    if (config.channels.some((c) => c.type === "buzz")) {
+      throw new AlertInputError("Buzz DM is already set up");
+    }
+  } else {
+    const url = channelUrl(target);
+    if (!url) {
+      throw new AlertInputError(
+        "Use an http(s) URL without a user name or password",
+      );
+    }
+    address = url.toString();
+  }
   const channel: Channel = {
     id: randomUUID().slice(0, 8),
     type,
-    target: url.toString(),
+    target: address,
     on: true,
   };
   const rules: AlertConfig["rules"] = {};
@@ -185,6 +204,34 @@ export async function muteItems(
   });
 }
 
+const DM_KEY = "alert_dm";
+
+/** Sends a DM to the owner, opening the conversation the first time (#83). */
+async function deliverDm(text: string) {
+  const setup = loadDmSetup();
+  if (!setup.ok) throw new Error(setup.reason);
+  const saved = await getSetting(DM_KEY);
+  const known =
+    typeof (saved as { dm?: unknown } | null)?.dm === "string"
+      ? (saved as { dm: string }).dm
+      : null;
+  if (known) {
+    try {
+      return await sendDmMessage(setup, known, text);
+    } catch (err) {
+      // Only a 4xx means the DM is gone (hidden or deleted). A 5xx, timeout
+      // or network error is transient: rethrow so the next run retries it
+      // rather than opening a duplicate DM.
+      if (!(err instanceof RelayError && err.status >= 400 && err.status < 500))
+        throw err;
+      console.error(`Alert: Buzz DM ${known} failed, reopening: ${err}`);
+    }
+  }
+  const dm = await openDm(setup);
+  await setSetting(DM_KEY, { dm });
+  await sendDmMessage(setup, dm, text);
+}
+
 /** Posts one alert to one channel; throws when it doesn't land. */
 export async function deliver(
   channel: Channel,
@@ -195,9 +242,13 @@ export async function deliver(
     path: string | null;
   },
 ) {
+  const origin = publicOrigin();
+  if (channel.type === "buzz") {
+    const link = origin && alert.path ? `${origin}${alert.path}` : null;
+    return deliverDm(dmText({ ...alert, link }));
+  }
   const url = channelUrl(channel.target);
   if (!url) throw new Error("invalid URL");
-  const origin = publicOrigin();
   const req = alertRequest(channel.type, url, {
     ...alert,
     link: origin && alert.path ? `${origin}${alert.path}` : null,
