@@ -71,7 +71,7 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: () => "Right away",
     repeatMin: null,
     repeat: "Once",
-    watched: false,
+    watched: true,
   },
   merge: {
     name: "PR ready to merge",

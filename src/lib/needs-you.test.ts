@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatAge } from "./age";
-import type { GitHub, GitHubItem } from "./github";
+import type { Claim, GitHub, GitHubItem } from "./github";
 import {
+  blockedRow,
   configFailures,
   countsByView,
   excludedLabels,
   failingRow,
   getNeedsYou,
+  githubReads,
   mergeRow,
   type NeedsYouRow,
   needsYouRefs,
@@ -59,8 +61,13 @@ const pr = (over: Partial<GitHubItem>): GitHubItem => ({
   labelEvents: [],
   ...over,
 });
-const github = (prs: GitHubItem[]): GitHub => ({
-  claims: [],
+const claim = (over: Partial<Claim>): Claim => ({
+  ...pr({ isPr: false, labels: ["ai-blocked"] }),
+  claimedAt: T("2026-10-16T12:00:00Z"),
+  ...over,
+});
+const github = (prs: GitHubItem[], claims: Claim[] = []): GitHub => ({
+  claims,
   prs,
   releases: [],
   truncated: false,
@@ -159,6 +166,50 @@ describe("mergeRow", () => {
   });
 });
 
+describe("blockedRow", () => {
+  it("lists open ai-blocked issues, oldest first", () => {
+    expect(
+      blockedRow(
+        github(
+          [],
+          [
+            claim({ number: 5 }),
+            claim({
+              repo: "rtorcato/db-common",
+              number: 9,
+              claimedAt: T("2026-10-15T00:00:00Z"),
+            }),
+            claim({ number: 6, labels: ["ai-wip"] }),
+          ],
+        ),
+      ),
+    ).toEqual({
+      kind: "blocked",
+      title: "2 issues blocked",
+      detail: "js-common#5, db-common#9",
+      count: 2,
+      since: "2026-10-15T00:00:00.000Z",
+      keys: ["blocked:rtorcato/js-common#5", "blocked:rtorcato/db-common#9"],
+    });
+  });
+  it("says item when a blocked PR is in it", () => {
+    expect(
+      blockedRow(github([], [claim({ number: 5, isPr: true })]))?.title,
+    ).toBe("1 item blocked");
+  });
+  it("is absent with none", () => {
+    expect(blockedRow(github([], [claim({ labels: ["ai-wip"] })]))).toBeNull();
+  });
+});
+
+describe("githubReads", () => {
+  it("drops the items whose label is excluded", () => {
+    expect(githubReads(new Set())).toEqual(["merge", "blocked"]);
+    expect(githubReads(new Set(["ai-blocked"]))).toEqual(["merge"]);
+    expect(githubReads(new Set(["merge-ready", "ai-blocked"]))).toEqual([]);
+  });
+});
+
 describe("excludedLabels", () => {
   it("splits a comma list", () => {
     expect([...excludedLabels(" merge-ready, ai-blocked ,")]).toEqual([
@@ -192,9 +243,30 @@ describe("getNeedsYou", () => {
     expect(data.rows.map((r) => r.kind)).toEqual(["merge"]);
   });
 
+  it("lists ai-blocked issues by default", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    loadGitHub.mockResolvedValue({
+      github: github([], [claim({})]),
+      fetchedAt: "",
+    });
+    const data = await getNeedsYou();
+    expect(data.rows.map((r) => r.kind)).toEqual(["blocked"]);
+  });
+
   it("hides merge-ready when NEEDS_YOU_EXCLUDE_LABELS names it", async () => {
     vi.stubEnv("GITHUB_TOKEN", "gh");
     vi.stubEnv("NEEDS_YOU_EXCLUDE_LABELS", "merge-ready");
+    loadGitHub.mockResolvedValue({
+      github: github([pr({})], [claim({})]),
+      fetchedAt: "",
+    });
+    const data = await getNeedsYou();
+    expect(data.rows.map((r) => r.kind)).toEqual(["blocked"]);
+  });
+
+  it("skips GitHub when every item it feeds is excluded", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.stubEnv("NEEDS_YOU_EXCLUDE_LABELS", "merge-ready,ai-blocked");
     const data = await getNeedsYou();
     expect(data.rows).toEqual([]);
     expect(loadGitHub).not.toHaveBeenCalled();
@@ -206,7 +278,7 @@ describe("getNeedsYou", () => {
     const data = await getNeedsYou();
     expect(data.failures).toContainEqual({
       source: "GitHub",
-      detail: "HTTP 502, so merge-ready PRs can't load.",
+      detail: "HTTP 502, so merge-ready PRs and blocked issues can't load.",
     });
   });
 
@@ -350,12 +422,13 @@ describe("needsYouRefs", () => {
       connected: true,
       rows: [
         { keys: ["merge:rtorcato/js-common#2", "failing:Gale"] },
+        { keys: ["blocked:rtorcato/db-common#9"] },
         { keys: undefined },
       ] as NeedsYouRow[],
       headsUp: [],
       failures: [],
       updatedAt: null,
     });
-    expect([...refs]).toEqual(["rtorcato/js-common#2"]);
+    expect([...refs]).toEqual(["rtorcato/js-common#2", "rtorcato/db-common#9"]);
   });
 });
