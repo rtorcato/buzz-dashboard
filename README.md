@@ -160,12 +160,14 @@ two is enough.
 
 ### 4. A GitHub token (optional)
 
-Feeds the GitHub rows of Needs you. Create a **fine-grained personal access
-token**:
+Feeds the GitHub rows of Needs you and the Releases view. Create a
+**fine-grained personal access token**:
 
 - Repository access: only the repositories you want shown.
-- Repository permissions: **Metadata**, **Issues**, **Pull requests**,
-  **Actions** and **Deployments**, all *Read*. Nothing else.
+- Repository permissions: **Metadata**, **Contents**, **Issues**, **Pull
+  requests**, **Actions** and **Deployments**, all *Read*. Nothing else.
+  Releases needs Contents for tags, commits and `package.json`, and Actions
+  for release runs waiting on an approval.
 
 Then set `GITHUB_OWNERS` to the users or orgs that own those repositories, and
 `GITHUB_TRUSTED_AUTHORS` to the logins your agents post as (see

@@ -29,8 +29,8 @@ type RuleMeta = {
   repeat: string;
   /**
    * False until Needs you reads the item, so the rule can't fire yet.
-   * ponytail: flip each one as its row lands (ai-blocked issues, release
-   * approvals, silent claims, cost over budget).
+   * ponytail: flip each one as its row lands (ai-blocked issues, silent
+   * claims, cost over budget).
    */
   watched: boolean;
 };
@@ -62,7 +62,7 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: (h) => `After ${h}h`,
     repeatMin: 240,
     repeat: "Every 4h until stopped",
-    watched: false,
+    watched: true,
   },
   blocked: {
     name: "Issue blocked",

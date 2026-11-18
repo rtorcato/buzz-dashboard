@@ -9,12 +9,14 @@ The relay is the only required source. GitHub, R2 and Postgres each add views, a
 
 ## GitHub
 
-`GITHUB_TOKEN` feeds the GitHub events on Timeline, the pull requests the history store keeps for Pipeline Flow, and the `merge-ready` row of the Needs-you card.
+`GITHUB_TOKEN` feeds the GitHub events on Timeline, the pull requests the history store keeps for Pipeline Flow, the Releases view, and the `merge-ready`, release-approval and red-CI rows of the Needs-you card.
 
 Create a **fine-grained personal access token** with read-only access and nothing else:
 
-- Repository permissions: **Metadata**, **Issues**, **Pull requests**, **Actions** and **Deployments**, all set to *Read*.
+- Repository permissions: **Metadata**, **Contents**, **Issues**, **Pull requests**, **Actions** and **Deployments**, all set to *Read*. Releases needs Contents for tags, commits and `package.json`, and Actions for release runs waiting on an approval.
 - Repository access: only the repositories you want shown.
+
+Releases watches every repository under `GITHUB_OWNERS` that has a tag or a `.github/workflows/release.yml`. For a repository whose root `package.json` isn't private, it also reads the package's latest version from the public npm registry, with no token.
 
 The dashboard reads the `ai-*` labels on issues and pull requests, so it expects a pipeline like this one:
 

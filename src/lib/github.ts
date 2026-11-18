@@ -146,7 +146,7 @@ type RawItem = {
 
 type RawSearch = { issueCount: number; nodes: (RawItem | null)[] };
 
-const secs = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+export const secs = (iso: string) => Math.floor(Date.parse(iso) / 1000);
 const secsOrNull = (iso: string | null | undefined) => (iso ? secs(iso) : null);
 
 export function toItem(raw: RawItem): GitHubItem {
@@ -271,7 +271,7 @@ export function buildQuery(aliases: string[]): string {
   return `query(${vars}) { ${fields.join("\n")} }`;
 }
 
-async function graphql<T = Record<string, RawSearch>>(
+export async function graphql<T = Record<string, RawSearch>>(
   token: string,
   query: string,
   variables: Record<string, string>,

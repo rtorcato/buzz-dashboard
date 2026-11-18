@@ -37,7 +37,9 @@ import {
   failingRow,
   MERGE_READY,
   mergeKey,
+  releaseKey,
 } from "./needs-you";
+import { readReleases } from "./releases";
 
 // Alerts (#45), server side: the stored config with its channel URLs
 // encrypted, the sender, and the pass the ingester runs every minute.
@@ -251,6 +253,21 @@ async function currentItems(
         title: `${key} is ready to merge`,
         detail: pr.title,
         path: "/pipeline",
+      });
+    }
+  }
+  const { releases } = process.env.GITHUB_TOKEN
+    ? await readReleases()
+    : { releases: null };
+  if (process.env.GITHUB_TOKEN && !releases) complete = false;
+  for (const r of releases?.repos ?? []) {
+    for (const run of r.waiting) {
+      items.push({
+        rule: "release",
+        key: releaseKey(r.repo, run.id),
+        title: `${r.repo.split("/")[1]} is waiting for release approval`,
+        detail: `${run.workflow} run #${run.number}`,
+        path: "/releases",
       });
     }
   }
