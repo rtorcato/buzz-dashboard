@@ -337,6 +337,9 @@ async function currentItems(
         title: `${r.repo.split("/")[1]} is waiting for release approval`,
         detail: `${run.workflow} run #${run.number}`,
         path: "/releases",
+        // The rule's hours count from when the run started waiting, not
+        // from when this pass first saw it (a restart would reset that).
+        since: run.createdAt * 1000,
       });
     }
   }
