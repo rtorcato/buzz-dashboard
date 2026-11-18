@@ -22,8 +22,16 @@ export type DmSetup =
   | { ok: true; key: string; pubkey: string; owner: string; relay: string }
   | { ok: false; reason: string };
 
-const pubkeyOf = (key: string) =>
-  Buffer.from(schnorr.getPublicKey(Buffer.from(key, "hex"))).toString("hex");
+/** The pubkey for `key`, or null when it isn't a valid curve scalar (all zeros, above the curve order). */
+const pubkeyOf = (key: string): string | null => {
+  try {
+    return Buffer.from(schnorr.getPublicKey(Buffer.from(key, "hex"))).toString(
+      "hex",
+    );
+  } catch {
+    return null;
+  }
+};
 
 /** The relay's HTTP base: its ws(s) URL on http(s), no path. */
 export function relayHttpBase(relayUrl: string): string | null {
@@ -53,6 +61,8 @@ export function dmSetup(
   const relay = relayHttpBase(env.buzzRelayUrl);
   if (!relay) return { ok: false, reason: "BUZZ_RELAY_URL is not a relay URL" };
   const pubkey = pubkeyOf(key.toLowerCase());
+  if (!pubkey)
+    return { ok: false, reason: "The posting key is not a valid key" };
   if (env.buzzOwnerPubkeys.includes(pubkey)) {
     return {
       ok: false,
@@ -86,6 +96,13 @@ export function httpAuth(
   return `Nostr ${Buffer.from(JSON.stringify(event)).toString("base64")}`;
 }
 
+/** A non-2xx answer from the relay; callers branch on `status`. */
+export class RelayError extends Error {
+  constructor(readonly status: number) {
+    super(`relay answered ${status}`);
+  }
+}
+
 async function publish(
   setup: Extract<DmSetup, { ok: true }>,
   kind: number,
@@ -106,7 +123,7 @@ async function publish(
     redirect: "error",
     signal: AbortSignal.timeout(SEND_MS),
   });
-  if (!res.ok) throw new Error(`relay answered ${res.status}`);
+  if (!res.ok) throw new RelayError(res.status);
   return res.json().catch(() => null);
 }
 

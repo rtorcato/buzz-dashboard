@@ -24,7 +24,13 @@ import {
 } from "./alerts";
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
 import { formatUsd } from "./cost";
-import { dmText, loadDmSetup, openDm, sendDmMessage } from "./buzz-dm";
+import {
+  dmText,
+  loadDmSetup,
+  openDm,
+  RelayError,
+  sendDmMessage,
+} from "./buzz-dm";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
 import { loadFailing, recentBuckets } from "./health-data";
@@ -213,7 +219,11 @@ async function deliverDm(text: string) {
     try {
       return await sendDmMessage(setup, known, text);
     } catch (err) {
-      // The DM may be gone (hidden or deleted): open a fresh one once.
+      // Only a 4xx means the DM is gone (hidden or deleted). A 5xx, timeout
+      // or network error is transient: rethrow so the next run retries it
+      // rather than opening a duplicate DM.
+      if (!(err instanceof RelayError && err.status >= 400 && err.status < 500))
+        throw err;
       console.error(`Alert: Buzz DM ${known} failed, reopening: ${err}`);
     }
   }

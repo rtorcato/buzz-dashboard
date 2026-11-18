@@ -48,6 +48,17 @@ it("never posts with an owner's key", () => {
   expect(viaDm).toMatchObject({ ok: false });
 });
 
+it("refuses a key that is hex but not a valid curve scalar", () => {
+  for (const bad of ["00".repeat(32), "ff".repeat(32)]) {
+    expect(dmSetup(env({ buzzPrivateKey: bad }), {})).toMatchObject({
+      ok: false,
+    });
+    expect(dmSetup(env(), { BUZZ_DM_PRIVATE_KEY: bad })).toMatchObject({
+      ok: false,
+    });
+  }
+});
+
 it("says why it can't set up", () => {
   expect(dmSetup(env({ buzzPrivateKey: "short" }), {})).toMatchObject({
     ok: false,
