@@ -44,6 +44,13 @@ const readGitHub = vi.hoisted(() =>
   vi.fn(async (): Promise<{ github: unknown }> => ({ github: null })),
 );
 vi.mock("./github", () => ({ readGitHub }));
+const readReleases = vi.hoisted(() =>
+  vi.fn(async (): Promise<{ releases: unknown }> => ({ releases: null })),
+);
+vi.mock("./releases", () => ({
+  readReleases,
+  loadReleases: async () => ({ releases: null }),
+}));
 vi.stubEnv("BUZZ_PRIVATE_KEY", "test-key");
 
 const {
@@ -194,5 +201,38 @@ it("alerts on an agent over the daily budget, once, and not under it", async () 
     .filter((b) => b.title.includes("today"));
   expect(sent.map((b) => [b.title, b.message])).toEqual([
     ["Fern is over $40 today", "$52.50 so far today · est."],
+  ]);
+});
+
+it("alerts on a release waiting past the rule's hours, timed from the run", async () => {
+  await addChannel("ntfy", URL_);
+  vi.stubEnv("GITHUB_TOKEN", "t");
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  const run = {
+    id: 9,
+    number: 42,
+    workflow: "release.yml",
+    url: "https://github.com/rtorcato/js-common/actions/runs/9",
+    createdAt: noon / 1000 - 1800,
+  };
+  readReleases.mockResolvedValue({
+    releases: { repos: [{ repo: "rtorcato/js-common", waiting: [run] }] },
+  });
+  await runAlerts(noon); // waiting 30 min: under the 1h default
+  await runAlerts(noon + 1_800_000); // 1h since the run, though first seen 30 min ago
+  await runAlerts(noon + 3_600_000); // inside the 4h repeat
+  await runAlerts(noon + 1_800_000 + 4 * 3_600_000); // repeats after 4h
+  readReleases.mockReset();
+  readReleases.mockResolvedValue({ releases: null });
+  vi.unstubAllEnvs();
+  vi.stubEnv("BUZZ_PRIVATE_KEY", "test-key");
+  const sent = fetchMock.mock.calls
+    .map((c) =>
+      JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
+    )
+    .filter((b) => b.title.includes("release approval"));
+  expect(sent.map((b) => [b.title, b.message])).toEqual([
+    ["js-common is waiting for release approval", "release.yml run #42"],
+    ["js-common is waiting for release approval", "release.yml run #42"],
   ]);
 });
