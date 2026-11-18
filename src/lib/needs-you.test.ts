@@ -1,18 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatAge } from "./age";
-import type { GitHub, GitHubItem } from "./github";
+import type { Claim, GitHub, GitHubItem } from "./github";
 import {
+  blockedRow,
+  ciRow,
   configFailures,
   countsByView,
   excludedLabels,
   failingRow,
   getNeedsYou,
+  githubReads,
   mergeRow,
   type NeedsYouRow,
   needsYouRefs,
   oldestFirst,
   pausedRow,
+  quietLine,
+  releaseKey,
+  releaseRow,
 } from "./needs-you";
+import type { Releases, RepoRelease } from "./releases";
 import type { StatusFeed } from "./status-feed";
 
 vi.mock("next/server", () => ({ connection: async () => {} }));
@@ -25,7 +32,10 @@ vi.mock("./status-feed", () => ({ loadStatusFeed }));
 const loadGitHub = vi.hoisted(() => vi.fn());
 vi.mock("./github", () => ({ loadGitHub }));
 const loadFailing = vi.hoisted(() => vi.fn(async () => null));
-vi.mock("./health-data", () => ({ loadFailing }));
+const recentBuckets = vi.hoisted(() => vi.fn(async () => []));
+vi.mock("./health-data", () => ({ loadFailing, recentBuckets }));
+const loadReleases = vi.hoisted(() => vi.fn());
+vi.mock("./releases", () => ({ loadReleases }));
 
 const T = (iso: string) => Date.parse(iso) / 1000;
 const feed = (usage: StatusFeed["usage"]): StatusFeed => ({
@@ -59,8 +69,13 @@ const pr = (over: Partial<GitHubItem>): GitHubItem => ({
   labelEvents: [],
   ...over,
 });
-const github = (prs: GitHubItem[]): GitHub => ({
-  claims: [],
+const claim = (over: Partial<Claim>): Claim => ({
+  ...pr({ isPr: false, labels: ["ai-blocked"] }),
+  claimedAt: T("2026-10-16T12:00:00Z"),
+  ...over,
+});
+const github = (prs: GitHubItem[], claims: Claim[] = []): GitHub => ({
+  claims,
   prs,
   releases: [],
   truncated: false,
@@ -159,6 +174,70 @@ describe("mergeRow", () => {
   });
 });
 
+describe("blockedRow", () => {
+  it("lists open ai-blocked issues, oldest first", () => {
+    expect(
+      blockedRow(
+        github(
+          [],
+          [
+            claim({ number: 5 }),
+            claim({
+              repo: "rtorcato/db-common",
+              number: 9,
+              claimedAt: T("2026-10-15T00:00:00Z"),
+            }),
+            claim({ number: 6, labels: ["ai-wip"] }),
+          ],
+        ),
+      ),
+    ).toEqual({
+      kind: "blocked",
+      title: "2 issues blocked",
+      detail: "js-common#5, db-common#9",
+      count: 2,
+      since: "2026-10-15T00:00:00.000Z",
+      keys: ["blocked:rtorcato/js-common#5", "blocked:rtorcato/db-common#9"],
+    });
+  });
+  it("says item when a blocked PR is in it", () => {
+    expect(
+      blockedRow(github([], [claim({ number: 5, isPr: true })]))?.title,
+    ).toBe("1 item blocked");
+  });
+  it("is absent with none", () => {
+    expect(blockedRow(github([], [claim({ labels: ["ai-wip"] })]))).toBeNull();
+  });
+});
+
+describe("quietLine", () => {
+  it("names the agent, how long and the claim", () => {
+    const now = T("2026-10-16T15:00:00Z");
+    expect(
+      quietLine(
+        { agent: "Honey", since: now - 3 * 3600, key: "js-common#5", more: 0 },
+        now,
+      ),
+    ).toBe("Honey has been quiet for 3h while holding js-common#5.");
+    expect(
+      quietLine(
+        { agent: "Honey", since: now - 150 * 60, key: "js-common#5", more: 2 },
+        now,
+      ),
+    ).toBe(
+      "Honey has been quiet for 2h 30m while holding js-common#5 and 2 more.",
+    );
+  });
+});
+
+describe("githubReads", () => {
+  it("drops the items whose label is excluded", () => {
+    expect(githubReads(new Set())).toEqual(["merge", "blocked"]);
+    expect(githubReads(new Set(["ai-blocked"]))).toEqual(["merge"]);
+    expect(githubReads(new Set(["merge-ready", "ai-blocked"]))).toEqual([]);
+  });
+});
+
 describe("excludedLabels", () => {
   it("splits a comma list", () => {
     expect([...excludedLabels(" merge-ready, ai-blocked ,")]).toEqual([
@@ -171,6 +250,10 @@ describe("excludedLabels", () => {
 
 describe("getNeedsYou", () => {
   beforeEach(() => {
+    loadReleases.mockResolvedValue({
+      releases: { repos: [], runsUnread: [] },
+      fetchedAt: "2026-10-16T20:00:00Z",
+    });
     vi.stubEnv("GITHUB_TOKEN", "");
     vi.stubEnv("NEEDS_YOU_EXCLUDE_LABELS", "");
     vi.stubEnv("BUZZ_RELAY_URL", "");
@@ -192,12 +275,84 @@ describe("getNeedsYou", () => {
     expect(data.rows.map((r) => r.kind)).toEqual(["merge"]);
   });
 
+  it("lists ai-blocked issues by default", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    loadGitHub.mockResolvedValue({
+      github: github([], [claim({})]),
+      fetchedAt: "",
+    });
+    const data = await getNeedsYou();
+    expect(data.rows.map((r) => r.kind)).toEqual(["blocked"]);
+  });
+
   it("hides merge-ready when NEEDS_YOU_EXCLUDE_LABELS names it", async () => {
     vi.stubEnv("GITHUB_TOKEN", "gh");
     vi.stubEnv("NEEDS_YOU_EXCLUDE_LABELS", "merge-ready");
+    loadGitHub.mockResolvedValue({
+      github: github([pr({})], [claim({})]),
+      fetchedAt: "",
+    });
+    const data = await getNeedsYou();
+    expect(data.rows.map((r) => r.kind)).toEqual(["blocked"]);
+  });
+
+  it("skips GitHub when every item it feeds is excluded", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.stubEnv("NEEDS_YOU_EXCLUDE_LABELS", "merge-ready,ai-blocked");
     const data = await getNeedsYou();
     expect(data.rows).toEqual([]);
     expect(loadGitHub).not.toHaveBeenCalled();
+  });
+
+  it("adds release approvals and red CI from the releases read", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.stubEnv("NEEDS_YOU_EXCLUDE_LABELS", "merge-ready");
+    loadReleases.mockResolvedValue({
+      releases: {
+        repos: [
+          {
+            repo: "acme/lib",
+            url: "https://github.com/acme/lib",
+            branch: "main",
+            tag: null,
+            commits: [],
+            moreCommits: false,
+            head: null,
+            waiting: [
+              {
+                id: 1,
+                number: 1,
+                workflow: "release.yml",
+                url: "https://github.com/acme/lib/actions/runs/1",
+                createdAt: T("2026-10-16T19:00:00Z"),
+              },
+            ],
+            redCi: {
+              check: "test",
+              url: null,
+              since: T("2026-10-16T19:00:00Z"),
+            },
+            packageName: null,
+            npm: null,
+          },
+        ],
+        runsUnread: [],
+      },
+      fetchedAt: "2026-10-16T20:00:00Z",
+    });
+    const data = await getNeedsYou();
+    expect(data.rows.map((r) => r.kind)).toEqual(["release", "ci"]);
+  });
+
+  it("names GitHub when the releases read fails", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.stubEnv("NEEDS_YOU_EXCLUDE_LABELS", "merge-ready");
+    loadReleases.mockResolvedValue({ releases: null, error: "HTTP 502" });
+    const data = await getNeedsYou();
+    expect(data.failures).toContainEqual({
+      source: "GitHub",
+      detail: "HTTP 502, so releases and CI on main can't load.",
+    });
   });
 
   it("names GitHub when its read fails", async () => {
@@ -206,7 +361,7 @@ describe("getNeedsYou", () => {
     const data = await getNeedsYou();
     expect(data.failures).toContainEqual({
       source: "GitHub",
-      detail: "HTTP 502, so merge-ready PRs can't load.",
+      detail: "HTTP 502, so merge-ready PRs and blocked issues can't load.",
     });
   });
 
@@ -214,6 +369,7 @@ describe("getNeedsYou", () => {
     vi.stubEnv("GITHUB_TOKEN", "gh");
     vi.useFakeTimers();
     loadGitHub.mockReturnValue(new Promise(() => {}));
+    loadReleases.mockReturnValue(new Promise(() => {}));
     const pending = getNeedsYou();
     await vi.advanceTimersByTimeAsync(2_000);
     const data = await pending;
@@ -247,6 +403,42 @@ describe("getNeedsYou", () => {
     const data = await getNeedsYou();
     expect(data.updatedAt).toBe("2026-10-09T18:00:00Z");
     expect(data.failures.map((f) => f.source)).not.toContain("the Buzz relay");
+  });
+
+  it("adds a heads-up for an agent quiet over 2h while holding a claim", async () => {
+    relayEnv();
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.useFakeTimers({ now: Date.parse("2026-10-16T15:00:00Z") });
+    const agent = (name: string, lastSeenAt: number) => ({
+      name,
+      lastSeenAt,
+      pubkeys: [name],
+    });
+    loadHive.mockResolvedValue({
+      hive: {
+        agents: [
+          agent("Honey", T("2026-10-16T12:00:00Z")),
+          agent("Fern", T("2026-10-16T14:00:00Z")),
+        ],
+      },
+      fetchedAt: "",
+    });
+    loadGitHub.mockResolvedValue({
+      github: github(
+        [],
+        [
+          claim({ agent: "Honey", labels: ["ai-wip"], number: 5 }),
+          claim({ agent: "Fern", labels: ["ai-wip"], number: 6 }),
+        ],
+      ),
+      fetchedAt: "",
+    });
+    const data = await getNeedsYou();
+    vi.useRealTimers();
+    expect(data.headsUp).toEqual([
+      "Honey has been quiet for 3h while holding js-common#5.",
+    ]);
+    expect(data.rows).toEqual([]);
   });
 
   it("names the relay when its fetch fails, and keeps freshness empty", async () => {
@@ -350,12 +542,99 @@ describe("needsYouRefs", () => {
       connected: true,
       rows: [
         { keys: ["merge:rtorcato/js-common#2", "failing:Gale"] },
+        { keys: ["blocked:rtorcato/db-common#9"] },
         { keys: undefined },
       ] as NeedsYouRow[],
       headsUp: [],
       failures: [],
       updatedAt: null,
     });
-    expect([...refs]).toEqual(["rtorcato/js-common#2"]);
+    expect([...refs]).toEqual(["rtorcato/js-common#2", "rtorcato/db-common#9"]);
+  });
+});
+
+const repo = (over: Partial<RepoRelease>): RepoRelease => ({
+  repo: "acme/lib",
+  url: "https://github.com/acme/lib",
+  branch: "main",
+  tag: { name: "v1.0.0", at: T("2026-10-01T00:00:00Z") },
+  commits: [],
+  moreCommits: false,
+  head: null,
+  waiting: [],
+  redCi: null,
+  packageName: null,
+  npm: null,
+  ...over,
+});
+const run = (id: number, iso: string) => ({
+  id,
+  number: id,
+  workflow: "release.yml",
+  url: `https://github.com/acme/lib/actions/runs/${id}`,
+  createdAt: T(iso),
+});
+
+describe("releaseRow", () => {
+  it("is null when nothing waits", () => {
+    expect(releaseRow({ repos: [repo({})], runsUnread: [] })).toBeNull();
+  });
+
+  it("counts every waiting run, oldest first, with one key per run", () => {
+    const releases: Releases = {
+      repos: [
+        repo({ waiting: [run(7, "2026-10-16T18:00:00Z")] }),
+        repo({
+          repo: "acme/app",
+          waiting: [
+            run(3, "2026-10-16T12:00:00Z"),
+            run(4, "2026-10-16T19:00:00Z"),
+          ],
+        }),
+      ],
+      runsUnread: [],
+    };
+    expect(releaseRow(releases)).toEqual({
+      kind: "release",
+      title: "3 releases waiting for your approval",
+      detail: "lib, app",
+      count: 3,
+      since: "2026-10-16T12:00:00.000Z",
+      keys: [
+        releaseKey("acme/lib", 7),
+        releaseKey("acme/app", 3),
+        releaseKey("acme/app", 4),
+      ],
+    });
+  });
+});
+
+describe("ciRow", () => {
+  it("is null when every main is green", () => {
+    expect(ciRow({ repos: [repo({})], runsUnread: [] })).toBeNull();
+  });
+
+  it("names the red repos and dates the oldest failure", () => {
+    const red = (since: string) => ({
+      check: "test",
+      url: null,
+      since: T(since),
+    });
+    const row = ciRow({
+      repos: [
+        repo({ redCi: red("2026-10-16T10:00:00Z") }),
+        repo({ repo: "acme/app" }),
+        repo({ repo: "acme/cli", redCi: red("2026-10-16T08:00:00Z") }),
+      ],
+      runsUnread: [],
+    });
+    expect(row).toMatchObject({
+      kind: "ci",
+      title: "Red CI on main in 2 repos",
+      detail: "lib, cli",
+      count: 2,
+      since: "2026-10-16T08:00:00.000Z",
+    });
+    expect(countsByView(row ? [row] : [])).toEqual({ releases: 2 });
   });
 });

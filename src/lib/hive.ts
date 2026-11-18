@@ -415,6 +415,33 @@ export async function getActivity(
   return perDay(events, days);
 }
 
+// The alerts pass reads the hive outside a request, every minute. A relay read
+// pages a week of messages, so it reuses one for up to 5 minutes. After a
+// failed read it waits 2 minutes before trying again, so a down relay isn't
+// asked for the whole week on every pass.
+const HIVE_TTL_MS = 5 * 60_000;
+const HIVE_RETRY_MS = 2 * 60_000;
+let lastHive: { hive: Hive; at: number } | undefined;
+let lastFailAt: number | undefined;
+
+/** The hive for the alerts pass, or null when the relay doesn't answer. */
+export async function readHive(now = Date.now()): Promise<Hive | null> {
+  if (lastHive && now - lastHive.at < HIVE_TTL_MS) return lastHive.hive;
+  if (lastFailAt !== undefined && now - lastFailAt < HIVE_RETRY_MS) {
+    return null;
+  }
+  try {
+    lastHive = { hive: await getHive(new Date(now)), at: now };
+    lastFailAt = undefined;
+    return lastHive.hive;
+  } catch (err) {
+    // No stale fallback: old presence would make a working agent look silent.
+    lastFailAt = now;
+    console.error(`Alerts, relay: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
 export type HiveResult =
   | { hive: Hive; fetchedAt: string }
   | { hive: null; error: string };
