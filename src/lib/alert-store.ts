@@ -23,7 +23,6 @@ import {
   ruleOf,
 } from "./alerts";
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
-import { formatUsd } from "./cost";
 import {
   dmText,
   loadDmSetup,
@@ -31,6 +30,7 @@ import {
   RelayError,
   sendDmMessage,
 } from "./buzz-dm";
+import { formatUsd } from "./cost";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
 import { loadFailing, recentBuckets } from "./health-data";
