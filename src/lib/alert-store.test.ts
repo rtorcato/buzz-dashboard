@@ -229,6 +229,9 @@ it("alerts on a release waiting past the rule's hours, timed from the run", asyn
   readReleases.mockResolvedValue({ releases: null });
   vi.unstubAllEnvs();
   vi.stubEnv("BUZZ_PRIVATE_KEY", "test-key");
+  vi.stubEnv("BUZZ_RELAY_URL", "wss://relay.test");
+  vi.stubEnv("BUZZ_OWNER_PUBKEY", "ab".repeat(32));
+  vi.stubEnv("BUZZ_DM_PRIVATE_KEY", "11".repeat(32));
   const sent = fetchMock.mock.calls
     .map((c) =>
       JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
