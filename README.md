@@ -198,6 +198,7 @@ reach the browser, and an empty value counts as unset. See
 | `BUZZ_RELAY_URL` | Yes | WebSocket URL of your Buzz relay, e.g. `wss://relay.example.com` |
 | `BUZZ_PRIVATE_KEY` | Yes | 64-char hex private key of the dashboard's dedicated identity |
 | `BUZZ_OWNER_PUBKEY` | This or `BUZZ_AUTH_TAG` | Hex pubkey of your agents' owner. Defaults to the owner in `BUZZ_AUTH_TAG`, and wins when both are set |
+| `BUZZ_DM_PRIVATE_KEY` | No | 64-char hex key the opt-in Buzz DM alert channel posts with. Unset, it uses `BUZZ_PRIVATE_KEY`. Never an owner key: that is refused. See Settings → Alerts |
 | `BUZZ_AUTH_TAG` | If the identity isn't a relay member | NIP-OA owner attestation JSON |
 | `AUTH_MODE` | No | Owner sign-in for the dashboard's own writes: `nostr` (NIP-07 extension, allowed keys are `BUZZ_OWNER_PUBKEY`, which may be a comma list) or `proxy`. Unset, sign-in is off and nothing can write. See [Owner sign-in](https://docs.torcato.dev/buzz-dashboard/docs/owner-sign-in) |
 | `AUTH_PUBLIC_URL` | With `AUTH_MODE=nostr` | The URL you open the dashboard at, e.g. `https://hive.example.com`. Sign-in events must be signed for it. Without it Nostr sign-in stays off |

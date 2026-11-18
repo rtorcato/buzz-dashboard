@@ -30,6 +30,9 @@ vi.mock("./health-data", () => ({
 }));
 vi.mock("./github", () => ({ readGitHub: async () => ({ github: null }) }));
 vi.stubEnv("BUZZ_PRIVATE_KEY", "test-key");
+vi.stubEnv("BUZZ_RELAY_URL", "wss://relay.test");
+vi.stubEnv("BUZZ_OWNER_PUBKEY", "ab".repeat(32));
+vi.stubEnv("BUZZ_DM_PRIVATE_KEY", "11".repeat(32));
 
 const {
   addChannel,
@@ -92,4 +95,32 @@ it("adds a mute without dropping the others, and a pass keeps both", async () =>
     "merge:a": { until: null },
     "failing:Gale": { until: noon + 3_600_000 },
   });
+});
+
+it("sets up Buzz DM, and sends alerts as DMs to the owner (#83)", async () => {
+  await addChannel("buzz", "");
+  const config = await loadAlerts();
+  expect(config.channels).toMatchObject([{ type: "buzz", on: true }]);
+  await expect(addChannel("buzz", "")).rejects.toThrow(AlertInputError);
+
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  await runAlerts(noon);
+  // One call to open the DM, one for the message.
+  const calls = () =>
+    fetchMock.mock.calls as unknown as [string, RequestInit][];
+  const kinds = () =>
+    calls().map(([, init]) => JSON.parse(String(init.body)).kind);
+  expect(kinds()).toEqual([41010, 9]);
+  expect(calls()[0][0]).toBe("https://relay.test/events");
+
+  // The DM is remembered: the hourly repeat only posts the message.
+  fetchMock.mockClear();
+  await runAlerts(noon + 3_600_000);
+  expect(kinds()).toEqual([9]);
+});
+
+it("refuses to set up Buzz DM without a usable key", async () => {
+  vi.stubEnv("BUZZ_DM_PRIVATE_KEY", "not-hex");
+  await expect(addChannel("buzz", "")).rejects.toThrow(AlertInputError);
+  vi.stubEnv("BUZZ_DM_PRIVATE_KEY", "11".repeat(32));
 });
