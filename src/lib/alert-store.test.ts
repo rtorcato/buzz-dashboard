@@ -6,7 +6,11 @@ const store = new Map<string, unknown>();
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({}));
 vi.mock("next/server", () => ({ connection: async () => {} }));
+const costByAgentSince = vi.hoisted(() =>
+  vi.fn(async (): Promise<{ agent: string; usd: number }[]> => []),
+);
 vi.mock("./history", () => ({
+  costByAgentSince,
   historyEnabled: () => true,
   getSetting: async (k: string) => store.get(k) ?? null,
   setSetting: async (k: string, v: unknown) => void store.set(k, v),
@@ -27,8 +31,19 @@ vi.mock("./health-data", () => ({
       { agent: "Gale", hour: { attempts: 14, errors: 6 }, since: 1_000 },
     ],
   }),
+  recentBuckets: async () => [],
 }));
-vi.mock("./github", () => ({ readGitHub: async () => ({ github: null }) }));
+const readHive = vi.hoisted(() =>
+  vi.fn(async (): Promise<unknown> => ({ agents: [] })),
+);
+vi.mock("./hive", () => ({ readHive }));
+vi.mock("./status-feed", () => ({
+  readStatusFeed: async () => ({ feed: null, stale: false }),
+}));
+const readGitHub = vi.hoisted(() =>
+  vi.fn(async (): Promise<{ github: unknown }> => ({ github: null })),
+);
+vi.mock("./github", () => ({ readGitHub }));
 vi.stubEnv("BUZZ_PRIVATE_KEY", "test-key");
 
 const {
@@ -92,4 +107,92 @@ it("adds a mute without dropping the others, and a pass keeps both", async () =>
     "merge:a": { until: null },
     "failing:Gale": { until: noon + 3_600_000 },
   });
+});
+
+it("alerts on an ai-blocked issue right away, once", async () => {
+  await addChannel("ntfy", URL_);
+  const blocked = {
+    repo: "rtorcato/js-common",
+    number: 5,
+    title: "Fix the thing",
+    isPr: false,
+    labels: ["ai-blocked"],
+    closedAt: null,
+    claimedAt: 1_000,
+  };
+  readGitHub.mockResolvedValue({ github: { prs: [], claims: [blocked] } });
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  await runAlerts(noon);
+  await runAlerts(noon + 3_600_000 * 5);
+  readGitHub.mockReset();
+  readGitHub.mockResolvedValue({ github: null });
+  const sent = fetchMock.mock.calls.map((c) =>
+    JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
+  );
+  expect(sent.filter((b) => b.title === "js-common#5 is blocked")).toHaveLength(
+    1,
+  );
+  expect(store.get("alert_state")).toMatchObject({
+    "blocked:rtorcato/js-common#5": { sent: noon },
+  });
+});
+
+it("alerts once on an agent silent for the rule's hours while holding a claim", async () => {
+  await addChannel("ntfy", URL_);
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  const secs = noon / 1000;
+  readHive.mockResolvedValue({
+    agents: [
+      { name: "Fern", lastSeenAt: secs - 3 * 3600, pubkeys: ["f"] },
+      { name: "Honey", lastSeenAt: secs - 60, pubkeys: ["h"] },
+    ],
+  });
+  const claim = (agent: string, number: number) => ({
+    repo: "rtorcato/js-common",
+    number,
+    agent,
+    labels: ["ai-wip"],
+    closedAt: null,
+    claimedAt: secs - 5 * 3600,
+  });
+  readGitHub.mockResolvedValue({
+    github: { prs: [], claims: [claim("Fern", 5), claim("Honey", 6)] },
+  });
+  const titles = () =>
+    fetchMock.mock.calls
+      .map((c) =>
+        JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
+      )
+      .map((b) => b.title)
+      .filter((t: string) => t.includes("silent"));
+  await runAlerts(noon);
+  // 3h quiet: not yet at the 4h default.
+  expect(titles()).toEqual([]);
+  await runAlerts(noon + 3_600_000);
+  await runAlerts(noon + 2 * 3_600_000);
+  readGitHub.mockReset();
+  readGitHub.mockResolvedValue({ github: null });
+  readHive.mockResolvedValue({ agents: [] });
+  expect(titles()).toEqual(["Fern is silent while holding a claim"]);
+});
+
+it("alerts on an agent over the daily budget, once, and not under it", async () => {
+  await addChannel("ntfy", URL_);
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  costByAgentSince.mockResolvedValue([
+    { agent: "Fern", usd: 52.5 },
+    { agent: "Honey", usd: 12 },
+  ]);
+  await runAlerts(noon);
+  await runAlerts(noon + 3_600_000);
+  costByAgentSince.mockReset();
+  costByAgentSince.mockResolvedValue([]);
+  const sent = fetchMock.mock.calls
+    .map((c) =>
+      JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
+    )
+    .filter((b) => b.title.includes("today"));
+  expect(sent.map((b) => [b.title, b.message])).toEqual([
+    ["Fern is over $40 today", "$52.50 so far today · est."],
+  ]);
 });

@@ -22,24 +22,35 @@ import {
   ruleOf,
 } from "./alerts";
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
+import { formatUsd } from "./cost";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
-import { loadFailing } from "./health-data";
+import { loadFailing, recentBuckets } from "./health-data";
 import {
+  costByAgentSince,
   getSetting,
   historyEnabled,
   setSetting,
   updateSetting,
 } from "./history";
+import { readHive } from "./hive";
 import {
+  blockedItems,
+  blockedKey,
+  budgetKey,
   excludedLabels,
   failingKey,
   failingRow,
+  githubReads,
   MERGE_READY,
   mergeKey,
+  quietAgents,
+  quietLine,
   releaseKey,
+  silentKey,
 } from "./needs-you";
 import { readReleases } from "./releases";
+import { readStatusFeed } from "./status-feed";
 
 // Alerts (#45), server side: the stored config with its channel URLs
 // encrypted, the sender, and the pass the ingester runs every minute.
@@ -220,6 +231,7 @@ export async function sendTest(id: string) {
  */
 async function currentItems(
   now: number,
+  config: AlertConfig,
 ): Promise<{ items: Item[]; complete: boolean }> {
   const items: Item[] = [];
   let complete = true;
@@ -241,19 +253,76 @@ async function currentItems(
       });
     }
   }
-  if (!excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS).has(MERGE_READY)) {
+  const budget = ruleOf(config, "budget");
+  if (source && budget.on) {
+    // Today on the server clock (TZ), as the cost chip counts it. The total
+    // resets at midnight, so the item clears and a new day alerts again.
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    for (const { agent, usd } of await costByAgentSince(today)) {
+      if (usd <= budget.value) continue;
+      items.push({
+        rule: "budget",
+        key: budgetKey(agent),
+        title: `${agent} is over $${budget.value} today`,
+        detail: `${formatUsd(usd)} so far today · est.`,
+        path: "/cost",
+      });
+    }
+  }
+  const reads = githubReads(
+    excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS),
+  );
+  const silent = ruleOf(config, "silent");
+  if (reads.length || silent.on) {
     const { github } = await readGitHub();
     if (!github) complete = false;
-    for (const pr of github?.prs ?? []) {
-      if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
-      const key = `${pr.repo.split("/")[1]}#${pr.number}`;
-      items.push({
-        rule: "merge",
-        key: mergeKey(pr),
-        title: `${key} is ready to merge`,
-        detail: pr.title,
-        path: "/pipeline",
-      });
+    if (github && reads.includes("merge")) {
+      for (const pr of github.prs) {
+        if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
+        const key = `${pr.repo.split("/")[1]}#${pr.number}`;
+        items.push({
+          rule: "merge",
+          key: mergeKey(pr),
+          title: `${key} is ready to merge`,
+          detail: pr.title,
+          path: "/pipeline",
+        });
+      }
+    }
+    if (github && reads.includes("blocked")) {
+      for (const item of blockedItems(github)) {
+        const key = `${item.repo.split("/")[1]}#${item.number}`;
+        items.push({
+          rule: "blocked",
+          key: blockedKey(item),
+          title: `${key} is blocked`,
+          detail: item.title,
+          path: "/pipeline",
+        });
+      }
+    }
+    if (github && silent.on) {
+      const hive = await readHive(now);
+      if (!hive) complete = false;
+      const secs = Math.floor(now / 1000);
+      const { feed } = hive ? await readStatusFeed() : { feed: null };
+      // The rule's hours, plus a slot, so the last turn is in the buckets.
+      const buckets = hive
+        ? await recentBuckets(secs, silent.value + 1, source)
+        : [];
+      for (const q of hive ? quietAgents(hive, feed, github, buckets) : []) {
+        // Only once it is due: an item that stayed would block the next one.
+        if (secs - q.since < silent.value * 3600) continue;
+        items.push({
+          rule: "silent",
+          key: silentKey(q.agent),
+          title: `${q.agent} is silent while holding a claim`,
+          detail: quietLine(q, secs),
+          path: "/health",
+          since: q.since * 1000,
+        });
+      }
     }
   }
   const { releases } = process.env.GITHUB_TOKEN
@@ -280,7 +349,7 @@ export async function runAlerts(now = Date.now()) {
   const on = config.channels.some((c) => c.on);
   // Acks still have to drop when their item clears, channels or not.
   if (!on && !Object.keys(await loadMutes()).length) return;
-  const { items, complete } = await currentItems(now);
+  const { items, complete } = await currentItems(now, config);
   // Prune under the key's lock, so a snooze saved meanwhile isn't overwritten.
   const mutes = await updateSetting(MUTE_KEY, (raw) =>
     liveMutes(toMutes(raw), complete ? items.map((i) => i.key) : null, now),

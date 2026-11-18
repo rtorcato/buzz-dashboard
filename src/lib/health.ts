@@ -172,6 +172,58 @@ export type AgentHealth = {
   failingSince: number | null;
 };
 
+/** The newest sign of a turn: the feed, a stored event or a message. */
+const lastTurnOf = (a: HealthInput["agents"][number], mine: HealthBucket[]) =>
+  Math.max(
+    a.runtime?.lastTurn ?? 0,
+    a.lastSeenAt ?? 0,
+    ...mine.map((b) => b.last),
+  ) || null;
+
+/** The agent's open claims, oldest first. */
+const claimsOf = (claims: HealthInput["claims"], agent: string) =>
+  claims
+    .filter((c) => c.agent === agent)
+    .sort((x, y) => x.claimedAt - y.claimedAt);
+
+// Claiming is itself a turn, so silence counts from the later of the two.
+const quietStart = (lastTurn: number | null, claims: HealthInput["claims"]) =>
+  Math.max(lastTurn ?? 0, claims.at(-1)?.claimedAt ?? 0);
+
+/** An agent holding a claim, and since when it has done nothing. */
+export type QuietClaim = {
+  agent: string;
+  /** Unix seconds of its last turn or newest claim, whichever is later. */
+  since: number;
+  /** The oldest open claim, e.g. "example-cli#124", and how many more. */
+  key: string;
+  more: number;
+};
+
+/**
+ * Every agent holding a claim, with when it went quiet, quietest first. The
+ * same silence as Health's, so Needs you and the Silent alert agree with it.
+ */
+export function quietClaims(
+  input: Pick<HealthInput, "agents" | "claims" | "buckets">,
+): QuietClaim[] {
+  return input.agents
+    .flatMap((a): QuietClaim[] => {
+      const claims = claimsOf(input.claims, a.name);
+      if (!claims.length) return [];
+      const mine = input.buckets.filter((b) => b.agent === a.name);
+      return [
+        {
+          agent: a.name,
+          since: quietStart(lastTurnOf(a, mine), claims),
+          key: claims[0].key,
+          more: claims.length - 1,
+        },
+      ];
+    })
+    .sort((x, y) => x.since - y.since);
+}
+
 /** Every agent's health, sorted failing, silent, healthy, idle. */
 export function buildHealth(input: HealthInput): AgentHealth[] {
   const { now, buckets } = input;
@@ -190,15 +242,8 @@ export function buildHealth(input: HealthInput): AgentHealth[] {
       hourly[i].ok += c.attempts - c.errors;
       hourly[i].errors += c.errors;
     }
-    const lastTurn =
-      Math.max(
-        a.runtime?.lastTurn ?? 0,
-        a.lastSeenAt ?? 0,
-        ...mine.map((b) => b.last),
-      ) || null;
-    const claims = input.claims
-      .filter((c) => c.agent === a.name)
-      .sort((x, y) => x.claimedAt - y.claimedAt);
+    const lastTurn = lastTurnOf(a, mine);
+    const claims = claimsOf(input.claims, a.name);
     const claim = claims[0]
       ? {
           key: claims[0].key,
@@ -207,10 +252,7 @@ export function buildHealth(input: HealthInput): AgentHealth[] {
         }
       : null;
     const quietFor = now - (lastTurn ?? 0);
-    // Claiming is itself a turn, so silence counts from the later of the two.
-    const silentFor = claim
-      ? now - Math.max(lastTurn ?? 0, claims.at(-1)?.claimedAt ?? 0)
-      : 0;
+    const silentFor = claim ? now - quietStart(lastTurn, claims) : 0;
     const f = failing.get(a.name);
     const h = hour.get(a.name) ?? zero();
     const status: HealthStatus = f
