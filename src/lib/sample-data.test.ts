@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sampleMode } from "./sample-data";
+import { sampleMergeRow, sampleMode } from "./sample-data";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -22,5 +22,13 @@ describe("sampleMode", () => {
     vi.stubEnv("BUZZ_SAMPLE_DATA", "1");
     vi.stubEnv("NODE_ENV", "production");
     expect(sampleMode()).toBe(false);
+  });
+});
+
+describe("sampleMergeRow", () => {
+  it("carries one merge alert key per PR so the snooze menu renders", () => {
+    const row = sampleMergeRow();
+    expect(row.keys).toHaveLength(row.count);
+    for (const k of row.keys ?? []) expect(k).toMatch(/^merge:[^#]+#\d+$/);
   });
 });
