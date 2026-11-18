@@ -22,10 +22,12 @@ import {
   ruleOf,
 } from "./alerts";
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
+import { formatUsd } from "./cost";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
 import { loadFailing, recentBuckets } from "./health-data";
 import {
+  costByAgentSince,
   getSetting,
   historyEnabled,
   setSetting,
@@ -35,6 +37,7 @@ import { readHive } from "./hive";
 import {
   blockedItems,
   blockedKey,
+  budgetKey,
   excludedLabels,
   failingKey,
   failingRow,
@@ -245,6 +248,23 @@ async function currentItems(
         title: row.title,
         detail: row.detail,
         path: "/health",
+      });
+    }
+  }
+  const budget = ruleOf(config, "budget");
+  if (source && budget.on) {
+    // Today on the server clock (TZ), as the cost chip counts it. The total
+    // resets at midnight, so the item clears and a new day alerts again.
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    for (const { agent, usd } of await costByAgentSince(today)) {
+      if (usd <= budget.value) continue;
+      items.push({
+        rule: "budget",
+        key: budgetKey(agent),
+        title: `${agent} is over $${budget.value} today`,
+        detail: `${formatUsd(usd)} so far today · est.`,
+        path: "/cost",
       });
     }
   }

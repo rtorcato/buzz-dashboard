@@ -362,6 +362,18 @@ export async function costSince(since: Date): Promise<number> {
   return row?.value ?? 0;
 }
 
+/** Estimated dollars per agent since `since`, for the Agent over budget rule. */
+export function costByAgentSince(since: Date) {
+  return historyDb()
+    .select({
+      agent: costPoints.agent,
+      usd: sql<number>`coalesce(sum(${costPoints.value}), 0)`.mapWith(Number),
+    })
+    .from(costPoints)
+    .where(and(gte(costPoints.at, since), eq(costPoints.metric, "cost")))
+    .groupBy(costPoints.agent);
+}
+
 /** Each agent that reported since `since`: its last report and tokens since `today`. */
 export function costReporters(since: Date, today: Date) {
   return historyDb()
