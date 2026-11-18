@@ -27,6 +27,14 @@ vi.mock("./health-data", () => ({
       { agent: "Gale", hour: { attempts: 14, errors: 6 }, since: 1_000 },
     ],
   }),
+  recentBuckets: async () => [],
+}));
+const readHive = vi.hoisted(() =>
+  vi.fn(async (): Promise<unknown> => ({ agents: [] })),
+);
+vi.mock("./hive", () => ({ readHive }));
+vi.mock("./status-feed", () => ({
+  readStatusFeed: async () => ({ feed: null, stale: false }),
 }));
 const readGitHub = vi.hoisted(() =>
   vi.fn(async (): Promise<{ github: unknown }> => ({ github: null })),
@@ -123,4 +131,43 @@ it("alerts on an ai-blocked issue right away, once", async () => {
   expect(store.get("alert_state")).toMatchObject({
     "blocked:rtorcato/js-common#5": { sent: noon },
   });
+});
+
+it("alerts once on an agent silent for the rule's hours while holding a claim", async () => {
+  await addChannel("ntfy", URL_);
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  const secs = noon / 1000;
+  readHive.mockResolvedValue({
+    agents: [
+      { name: "Fern", lastSeenAt: secs - 3 * 3600, pubkeys: ["f"] },
+      { name: "Honey", lastSeenAt: secs - 60, pubkeys: ["h"] },
+    ],
+  });
+  const claim = (agent: string, number: number) => ({
+    repo: "rtorcato/js-common",
+    number,
+    agent,
+    labels: ["ai-wip"],
+    closedAt: null,
+    claimedAt: secs - 5 * 3600,
+  });
+  readGitHub.mockResolvedValue({
+    github: { prs: [], claims: [claim("Fern", 5), claim("Honey", 6)] },
+  });
+  const titles = () =>
+    fetchMock.mock.calls
+      .map((c) =>
+        JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
+      )
+      .map((b) => b.title)
+      .filter((t: string) => t.includes("silent"));
+  await runAlerts(noon);
+  // 3h quiet: not yet at the 4h default.
+  expect(titles()).toEqual([]);
+  await runAlerts(noon + 3_600_000);
+  await runAlerts(noon + 2 * 3_600_000);
+  readGitHub.mockReset();
+  readGitHub.mockResolvedValue({ github: null });
+  readHive.mockResolvedValue({ agents: [] });
+  expect(titles()).toEqual(["Fern is silent while holding a claim"]);
 });

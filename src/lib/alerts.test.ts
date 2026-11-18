@@ -55,6 +55,20 @@ describe("dueAlerts", () => {
     expect(dueAlerts(config(), sent, [merge], NOON + 99 * H).due).toEqual([]);
   });
 
+  it("counts a rule's hours from the item's own start when it has one", () => {
+    const silent: Item = {
+      rule: "silent",
+      key: "silent:Fern",
+      title: "Fern is silent",
+      detail: "",
+      path: "/health",
+      since: NOON - 4 * H,
+    };
+    expect(dueAlerts(config(), {}, [silent], NOON).due).toHaveLength(1);
+    const early = { ...silent, since: NOON - 3 * H };
+    expect(dueAlerts(config(), {}, [early], NOON).due).toEqual([]);
+  });
+
   it("forgets an item that cleared, so it starts over", () => {
     const prev = { [merge.key]: { first: NOON, sent: NOON } };
     expect(dueAlerts(config(), prev, [], NOON).state).toEqual({});

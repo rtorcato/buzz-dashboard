@@ -14,6 +14,7 @@ import {
   needsYouRefs,
   oldestFirst,
   pausedRow,
+  quietLine,
 } from "./needs-you";
 import type { StatusFeed } from "./status-feed";
 
@@ -27,7 +28,8 @@ vi.mock("./status-feed", () => ({ loadStatusFeed }));
 const loadGitHub = vi.hoisted(() => vi.fn());
 vi.mock("./github", () => ({ loadGitHub }));
 const loadFailing = vi.hoisted(() => vi.fn(async () => null));
-vi.mock("./health-data", () => ({ loadFailing }));
+const recentBuckets = vi.hoisted(() => vi.fn(async () => []));
+vi.mock("./health-data", () => ({ loadFailing, recentBuckets }));
 
 const T = (iso: string) => Date.parse(iso) / 1000;
 const feed = (usage: StatusFeed["usage"]): StatusFeed => ({
@@ -202,6 +204,26 @@ describe("blockedRow", () => {
   });
 });
 
+describe("quietLine", () => {
+  it("names the agent, how long and the claim", () => {
+    const now = T("2026-10-16T15:00:00Z");
+    expect(
+      quietLine(
+        { agent: "Honey", since: now - 3 * 3600, key: "js-common#5", more: 0 },
+        now,
+      ),
+    ).toBe("Honey has been quiet for 3h while holding js-common#5.");
+    expect(
+      quietLine(
+        { agent: "Honey", since: now - 150 * 60, key: "js-common#5", more: 2 },
+        now,
+      ),
+    ).toBe(
+      "Honey has been quiet for 2h 30m while holding js-common#5 and 2 more.",
+    );
+  });
+});
+
 describe("githubReads", () => {
   it("drops the items whose label is excluded", () => {
     expect(githubReads(new Set())).toEqual(["merge", "blocked"]);
@@ -319,6 +341,42 @@ describe("getNeedsYou", () => {
     const data = await getNeedsYou();
     expect(data.updatedAt).toBe("2026-10-09T18:00:00Z");
     expect(data.failures.map((f) => f.source)).not.toContain("the Buzz relay");
+  });
+
+  it("adds a heads-up for an agent quiet over 2h while holding a claim", async () => {
+    relayEnv();
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.useFakeTimers({ now: Date.parse("2026-10-16T15:00:00Z") });
+    const agent = (name: string, lastSeenAt: number) => ({
+      name,
+      lastSeenAt,
+      pubkeys: [name],
+    });
+    loadHive.mockResolvedValue({
+      hive: {
+        agents: [
+          agent("Honey", T("2026-10-16T12:00:00Z")),
+          agent("Fern", T("2026-10-16T14:00:00Z")),
+        ],
+      },
+      fetchedAt: "",
+    });
+    loadGitHub.mockResolvedValue({
+      github: github(
+        [],
+        [
+          claim({ agent: "Honey", labels: ["ai-wip"], number: 5 }),
+          claim({ agent: "Fern", labels: ["ai-wip"], number: 6 }),
+        ],
+      ),
+      fetchedAt: "",
+    });
+    const data = await getNeedsYou();
+    vi.useRealTimers();
+    expect(data.headsUp).toEqual([
+      "Honey has been quiet for 3h while holding js-common#5.",
+    ]);
+    expect(data.rows).toEqual([]);
   });
 
   it("names the relay when its fetch fails, and keeps freshness empty", async () => {

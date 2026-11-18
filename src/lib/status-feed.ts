@@ -116,6 +116,11 @@ let last: StatusFeed | null = null;
 export const loadStatusFeed = cache(async (): Promise<FeedResult> => {
   await connection();
   if (sampleMode()) return { feed: sampleFeed(), stale: false };
+  return readStatusFeed();
+});
+
+/** The feed without a request, for the alerts pass. */
+export async function readStatusFeed(): Promise<FeedResult> {
   let env: MediaEnv;
   try {
     env = readMediaEnv();
@@ -137,4 +142,4 @@ export const loadStatusFeed = cache(async (): Promise<FeedResult> => {
     }
     return { feed: last, stale: last !== null };
   }
-});
+}

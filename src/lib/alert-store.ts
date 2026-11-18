@@ -24,13 +24,14 @@ import {
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
-import { loadFailing } from "./health-data";
+import { loadFailing, recentBuckets } from "./health-data";
 import {
   getSetting,
   historyEnabled,
   setSetting,
   updateSetting,
 } from "./history";
+import { readHive } from "./hive";
 import {
   blockedItems,
   blockedKey,
@@ -40,7 +41,11 @@ import {
   githubReads,
   MERGE_READY,
   mergeKey,
+  quietAgents,
+  quietLine,
+  silentKey,
 } from "./needs-you";
+import { readStatusFeed } from "./status-feed";
 
 // Alerts (#45), server side: the stored config with its channel URLs
 // encrypted, the sender, and the pass the ingester runs every minute.
@@ -221,6 +226,7 @@ export async function sendTest(id: string) {
  */
 async function currentItems(
   now: number,
+  config: AlertConfig,
 ): Promise<{ items: Item[]; complete: boolean }> {
   const items: Item[] = [];
   let complete = true;
@@ -245,7 +251,8 @@ async function currentItems(
   const reads = githubReads(
     excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS),
   );
-  if (reads.length) {
+  const silent = ruleOf(config, "silent");
+  if (reads.length || silent.on) {
     const { github } = await readGitHub();
     if (!github) complete = false;
     if (github && reads.includes("merge")) {
@@ -273,6 +280,28 @@ async function currentItems(
         });
       }
     }
+    if (github && silent.on) {
+      const hive = await readHive(now);
+      if (!hive) complete = false;
+      const secs = Math.floor(now / 1000);
+      const { feed } = hive ? await readStatusFeed() : { feed: null };
+      // The rule's hours, plus a slot, so the last turn is in the buckets.
+      const buckets = hive
+        ? await recentBuckets(secs, silent.value + 1, source)
+        : [];
+      for (const q of hive ? quietAgents(hive, feed, github, buckets) : []) {
+        // Only once it is due: an item that stayed would block the next one.
+        if (secs - q.since < silent.value * 3600) continue;
+        items.push({
+          rule: "silent",
+          key: silentKey(q.agent),
+          title: `${q.agent} is silent while holding a claim`,
+          detail: quietLine(q, secs),
+          path: "/health",
+          since: q.since * 1000,
+        });
+      }
+    }
   }
   return { items, complete };
 }
@@ -283,7 +312,7 @@ export async function runAlerts(now = Date.now()) {
   const on = config.channels.some((c) => c.on);
   // Acks still have to drop when their item clears, channels or not.
   if (!on && !Object.keys(await loadMutes()).length) return;
-  const { items, complete } = await currentItems(now);
+  const { items, complete } = await currentItems(now, config);
   // Prune under the key's lock, so a snooze saved meanwhile isn't overwritten.
   const mutes = await updateSetting(MUTE_KEY, (raw) =>
     liveMutes(toMutes(raw), complete ? items.map((i) => i.key) : null, now),

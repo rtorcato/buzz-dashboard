@@ -53,7 +53,7 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: (h) => `No turn for ${h}h`,
     repeatMin: null,
     repeat: "Once",
-    watched: false,
+    watched: true,
   },
   release: {
     name: "Release waiting for approval",
@@ -181,6 +181,11 @@ export type Item = {
   detail: string;
   /** The dashboard view it links to, e.g. "/health". */
   path: string;
+  /**
+   * When the condition began (ms), if the source knows: a rule's hours then
+   * count from it, not from the pass that first saw the item.
+   */
+  since?: number;
 };
 
 /** Per item key: when it first showed (ms) and when it last went out, if ever. */
@@ -267,7 +272,7 @@ export function dueAlerts(
     const rule = ruleOf(config, item.rule);
     if (!rule.on || isMuted(mutes, item.key, now)) continue;
     const waitMs = meta.knob === "hours" ? rule.value * 3_600_000 : 0;
-    if (now - s.first < waitMs) continue;
+    if (now - (item.since ?? s.first) < waitMs) continue;
     if (s.sent !== null) {
       if (meta.repeatMin === null) continue;
       if (now - s.sent < meta.repeatMin * 60_000) continue;
