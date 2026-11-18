@@ -4,6 +4,7 @@ import {
   failingAgents,
   type HealthBucket,
   type HealthInput,
+  quietClaims,
   SLOT_S,
 } from "./health";
 
@@ -173,5 +174,33 @@ describe("buildHealth", () => {
       cancelled: 2,
       maxTokens: 1,
     });
+  });
+});
+
+describe("quietClaims", () => {
+  const agent = (name: string, lastSeenAt: number | null) => ({
+    name,
+    lastSeenAt,
+  });
+  it("counts from the later of the last turn and the newest claim", () => {
+    const q = quietClaims({
+      agents: [agent("Fern", NOW - 5 * 3600), agent("Gale", NOW - 9 * 3600)],
+      claims: [
+        { agent: "Fern", key: "r#1", claimedAt: NOW - 8 * 3600 },
+        { agent: "Fern", key: "r#2", claimedAt: NOW - 6 * 3600 },
+        { agent: "Gale", key: "r#3", claimedAt: NOW - 2 * 3600 },
+      ],
+      buckets: [turns("Fern", 4, 2)],
+    });
+    // Quietest first.
+    expect(q).toEqual([
+      { agent: "Gale", since: NOW - 2 * 3600, key: "r#3", more: 0 },
+      { agent: "Fern", since: slot(4) + 60, key: "r#1", more: 1 },
+    ]);
+  });
+  it("leaves out agents without a claim", () => {
+    expect(
+      quietClaims({ agents: [agent("Fern", null)], claims: [], buckets: [] }),
+    ).toEqual([]);
   });
 });

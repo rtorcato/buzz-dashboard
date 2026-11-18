@@ -1,9 +1,17 @@
 import { connection } from "next/server";
 import { cache } from "react";
+import { formatAge } from "./age";
+import { runtimeFor } from "./agents";
 import { type GitHub, loadGitHub } from "./github";
-import type { FailingAgent, HealthSource } from "./health";
-import { loadFailing } from "./health-data";
-import { loadHive } from "./hive";
+import {
+  type FailingAgent,
+  type HealthBucket,
+  type HealthSource,
+  type QuietClaim,
+  quietClaims,
+} from "./health";
+import { loadFailing, recentBuckets } from "./health-data";
+import { type Hive, loadHive } from "./hive";
 import { sampleMergeRow, sampleMode } from "./sample-data";
 import { loadStatusFeed, type StatusFeed } from "./status-feed";
 import { trippedDetail, usageState } from "./usage";
@@ -60,6 +68,7 @@ export const mergeKey = (pr: { repo: string; number: number }) =>
   `merge:${pr.repo}#${pr.number}`;
 export const blockedKey = (item: { repo: string; number: number }) =>
   `blocked:${item.repo}#${item.number}`;
+export const silentKey = (agent: string) => `silent:${agent}`;
 
 // A source the dashboard can't read, shown as a destructive Alert.
 export type SourceFailure = { source: string; detail: string };
@@ -178,6 +187,45 @@ export function blockedRow(github: GitHub) {
   } satisfies NeedsYouRow;
 }
 
+/**
+ * Who holds a claim and since when they went quiet, from the sources Health
+ * reads: relay presence, the status feed's turns, stored health events and the
+ * GitHub claims with a known agent.
+ */
+export function quietAgents(
+  hive: Hive,
+  feed: StatusFeed | null,
+  github: GitHub,
+  buckets: HealthBucket[],
+): QuietClaim[] {
+  return quietClaims({
+    agents: hive.agents.map((a) => ({
+      name: a.name,
+      lastSeenAt: a.lastSeenAt,
+      runtime: feed ? runtimeFor(a, feed.runtime) : undefined,
+    })),
+    claims: github.claims.flatMap((c) =>
+      c.agent
+        ? [
+            {
+              agent: c.agent,
+              key: `${c.repo.split("/")[1]}#${c.number}`,
+              claimedAt: c.claimedAt,
+            },
+          ]
+        : [],
+    ),
+    buckets,
+  });
+}
+
+/** Heads-up: quiet this long while holding a claim (DESIGN.md → Shell). */
+export const HEADS_UP_QUIET_S = 2 * 3600;
+
+/** "Honey has been quiet for 3h while holding js-common#124 and 1 more." */
+export const quietLine = (q: QuietClaim, now: number) =>
+  `${q.agent} has been quiet for ${formatAge((now - q.since) * 1000)} while holding ${q.key}${q.more ? ` and ${q.more} more` : ""}.`;
+
 /** The "Agent failing turns" row for one agent (DESIGN.md → Shell). */
 export function failingRow(f: FailingAgent, source: HealthSource) {
   const { attempts, errors } = f.hour;
@@ -254,10 +302,13 @@ export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
   const failures = configFailures(process.env);
   // Freshness counts only successful fetches.
   let updatedAt: string | null = null;
+  let hive: Hive | null = null;
   if (!failures.some((f) => f.source === RELAY)) {
     const result = await loadHive();
-    if (result.hive) updatedAt = result.fetchedAt;
-    else {
+    if (result.hive) {
+      updatedAt = result.fetchedAt;
+      hive = result.hive;
+    } else {
       failures.push({
         source: RELAY,
         detail: `${result.error}, so Agents and Timeline can't load.`,
@@ -265,11 +316,14 @@ export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
     }
   }
   const rows: NeedsYouRow[] = [];
-  const paused = pausedRow((await loadStatusFeed()).feed, Date.now() / 1000);
+  const headsUp: string[] = [];
+  const { feed } = await loadStatusFeed();
+  const paused = pausedRow(feed, Date.now() / 1000);
   if (paused) rows.push(paused);
   const excluded = excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS);
   const reads = githubReads(excluded);
-  if (process.env.GITHUB_TOKEN && reads.length) {
+  // Silence needs the claims too, so GitHub is read whenever the relay is.
+  if (process.env.GITHUB_TOKEN && (reads.length || hive)) {
     const result = await Promise.race([
       loadGitHub(),
       new Promise<null>((r) => setTimeout(r, GITHUB_WAIT_MS, null)),
@@ -279,7 +333,20 @@ export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
       if (merge) rows.push(merge);
       const blocked = reads.includes("blocked") && blockedRow(result.github);
       if (blocked) rows.push(blocked);
-    } else if (result) {
+      if (hive) {
+        const now = Math.floor(Date.now() / 1000);
+        try {
+          const buckets = await recentBuckets(now, 24);
+          for (const q of quietAgents(hive, feed, result.github, buckets)) {
+            if (now - q.since > HEADS_UP_QUIET_S) {
+              headsUp.push(quietLine(q, now));
+            }
+          }
+        } catch (err) {
+          console.error("Needs you, silence:", err);
+        }
+      }
+    } else if (result && reads.length) {
       failures.push({
         source: "GitHub",
         detail: `${result.error}, so ${reads.map((r) => GITHUB_READS[r]).join(" and ")} can't load.`,
@@ -300,7 +367,7 @@ export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
   return {
     connected: false,
     rows,
-    headsUp: [],
+    headsUp,
     failures,
     updatedAt,
   };
