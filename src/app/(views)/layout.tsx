@@ -14,7 +14,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { loadMutes } from "@/lib/alert-store";
 import { authMode, getOwner } from "@/lib/auth";
 import { costConnected } from "@/lib/cost-source";
-import { costSince, historyEnabled } from "@/lib/history";
+import { clearedSince, costSince, historyEnabled } from "@/lib/history";
 import { countsByView, getNeedsYou } from "@/lib/needs-you";
 import { npubEncode } from "@/lib/npub";
 
@@ -23,12 +23,13 @@ export default async function ViewsLayout({
 }: {
   children: ReactNode;
 }) {
-  const [needsYou, costToday, jar, owner, mutes] = await Promise.all([
+  const [needsYou, costToday, jar, owner, mutes, cleared] = await Promise.all([
     getNeedsYou(),
     readCostToday(),
     cookies(),
     getOwner(),
     readMutes(),
+    readCleared(),
   ]);
   const mode = authMode();
   const now = Date.now();
@@ -67,6 +68,7 @@ export default async function ViewsLayout({
             <NeedsYouCard
               data={needsYou}
               now={now}
+              cleared={cleared}
               snooze={
                 mutes && {
                   mutes,
@@ -110,6 +112,18 @@ async function readMutes() {
     return await loadMutes();
   } catch (err) {
     console.error("Needs you, snooze:", err);
+    return null;
+  }
+}
+
+// The cleared-items log (#88): the last 30 days, null so no footer without the
+// history store or while it's down.
+async function readCleared() {
+  if (!historyEnabled()) return null;
+  try {
+    return await clearedSince(new Date(Date.now() - 30 * 86_400_000));
+  } catch (err) {
+    console.error("Needs you, cleared log:", err);
     return null;
   }
 }

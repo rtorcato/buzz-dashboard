@@ -22,12 +22,17 @@ import {
   ruleOf,
 } from "./alerts";
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
+import { diffLog } from "./cleared-log";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
 import { loadFailing } from "./health-data";
 import {
   getSetting,
   historyEnabled,
+  logAcked,
+  logAppeared,
+  logCleared,
+  openLogRows,
   setSetting,
   updateSetting,
 } from "./history";
@@ -218,9 +223,10 @@ export async function sendTest(id: string) {
  */
 async function currentItems(
   now: number,
-): Promise<{ items: Item[]; complete: boolean }> {
+): Promise<{ items: Item[]; complete: boolean; down: RuleId[] }> {
   const items: Item[] = [];
   let complete = true;
+  const down: RuleId[] = [];
   const source = (await loadSignerRecord())
     ? "signer"
     : (await loadIngestTokenRecord())
@@ -241,7 +247,10 @@ async function currentItems(
   }
   if (!excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS).has(MERGE_READY)) {
     const { github } = await readGitHub();
-    if (!github) complete = false;
+    if (!github) {
+      complete = false;
+      down.push("merge");
+    }
     for (const pr of github?.prs ?? []) {
       if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
       const key = `${pr.repo.split("/")[1]}#${pr.number}`;
@@ -254,16 +263,44 @@ async function currentItems(
       });
     }
   }
-  return { items, complete };
+  return { items, complete, down };
+}
+
+/** Logs which items appeared, got acked or cleared since the last pass (#88). */
+async function recordCleared(
+  items: Item[],
+  down: RuleId[],
+  mutes: Mutes,
+  now: number,
+) {
+  try {
+    const { appeared, cleared, acked } = diffLog(
+      await openLogRows(),
+      items,
+      mutes,
+      down,
+    );
+    await logAppeared(appeared, now);
+    await logAcked(acked);
+    await logCleared(cleared, now);
+  } catch (err) {
+    // The log is a nicety; it must never stop an alert going out.
+    console.error(`Cleared log: ${err}`);
+  }
 }
 
 /** One alerts pass: sends what is due and remembers what went out. */
 export async function runAlerts(now = Date.now()) {
+  // No database, no alerts and no log.
+  if (!historyEnabled()) return;
   const config = await loadAlerts();
   const on = config.channels.some((c) => c.on);
+  // The cleared log (#88) records every pass, channels or not.
+  const { items, complete, down } = await currentItems(now);
+  const before = await loadMutes();
+  await recordCleared(items, down, before, now);
   // Acks still have to drop when their item clears, channels or not.
-  if (!on && !Object.keys(await loadMutes()).length) return;
-  const { items, complete } = await currentItems(now);
+  if (!on && !Object.keys(before).length) return;
   // Prune under the key's lock, so a snooze saved meanwhile isn't overwritten.
   const mutes = await updateSetting(MUTE_KEY, (raw) =>
     liveMutes(toMutes(raw), complete ? items.map((i) => i.key) : null, now),

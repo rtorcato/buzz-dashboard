@@ -13,6 +13,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   lt,
   max,
   min,
@@ -21,6 +22,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import type { LogRow, OpenRow } from "./cleared-log";
 import { FLOW_KINDS } from "./flow";
 import type { HealthBucket } from "./health";
 import {
@@ -30,6 +32,7 @@ import {
   type HistoryEvent,
   type NewAgentEvent,
   type NewCostPoint,
+  needsYouLog,
   settings,
 } from "./history-schema";
 
@@ -38,7 +41,7 @@ import {
 // connection. The history views (#41 to #47) read through listEvents and
 // historyStats.
 
-const schema = { events, costPoints, agentEvents, settings };
+const schema = { events, costPoints, agentEvents, needsYouLog, settings };
 type Db = DbHandle<typeof schema>["db"];
 
 /** True when DATABASE_URL is set, so the history views and nav show. */
@@ -77,7 +80,13 @@ export async function migrateHistory() {
   }
 }
 
-const HIVE_TABLES = ["events", "cost_points", "agent_events", "settings"];
+const HIVE_TABLES = [
+  "events",
+  "cost_points",
+  "agent_events",
+  "needs_you_log",
+  "settings",
+];
 
 /**
  * #116: the relay URL becomes each history table's `hive` default, and rows
@@ -106,6 +115,7 @@ export async function pruneHistory(now = new Date()) {
     historyDb().delete(events).where(lt(events.at, cutoff)),
     historyDb().delete(costPoints).where(lt(costPoints.at, cutoff)),
     historyDb().delete(agentEvents).where(lt(agentEvents.at, cutoff)),
+    historyDb().delete(needsYouLog).where(lt(needsYouLog.appearedAt, cutoff)),
   ]);
   return results.reduce((n, r) => n + (r.rowCount ?? 0), 0);
 }
@@ -304,6 +314,74 @@ export async function updateSetting<T>(
 
 export async function deleteSetting(key: string) {
   await historyDb().delete(settings).where(eq(settings.key, key));
+}
+
+/** Needs you items that showed and haven't cleared yet (#88). */
+export async function openLogRows(): Promise<OpenRow[]> {
+  const rows = await historyDb()
+    .select()
+    .from(needsYouLog)
+    .where(isNull(needsYouLog.clearedAt));
+  return rows.map((r) => ({
+    key: r.key,
+    appearedAt: r.appearedAt.getTime(),
+    acked: r.acked,
+  }));
+}
+
+/** Starts a log row per item; one already open for the key is left alone. */
+export async function logAppeared(
+  items: { key: string; rule: string; title: string }[],
+  at: number,
+) {
+  if (!items.length) return;
+  await historyDb()
+    .insert(needsYouLog)
+    .values(items.map((i) => ({ ...i, appearedAt: new Date(at) })))
+    .onConflictDoNothing();
+}
+
+/** Marks the open rows for `keys` cleared. */
+export async function logCleared(keys: string[], at: number) {
+  if (!keys.length) return;
+  await historyDb()
+    .update(needsYouLog)
+    .set({ clearedAt: new Date(at) })
+    .where(and(inArray(needsYouLog.key, keys), isNull(needsYouLog.clearedAt)));
+}
+
+/** Marks the open rows for `keys` acked before they cleared. */
+export async function logAcked(keys: string[]) {
+  if (!keys.length) return;
+  await historyDb()
+    .update(needsYouLog)
+    .set({ acked: true })
+    .where(and(inArray(needsYouLog.key, keys), isNull(needsYouLog.clearedAt)));
+}
+
+/** Rows that cleared since `since`, newest first. */
+export async function clearedSince(since: Date): Promise<LogRow[]> {
+  const rows = await historyDb()
+    .select()
+    .from(needsYouLog)
+    .where(
+      and(isNotNull(needsYouLog.clearedAt), gte(needsYouLog.clearedAt, since)),
+    )
+    .orderBy(desc(needsYouLog.clearedAt));
+  return rows.flatMap((r) =>
+    r.clearedAt
+      ? [
+          {
+            key: r.key,
+            rule: r.rule,
+            title: r.title,
+            appearedAt: r.appearedAt.getTime(),
+            clearedAt: r.clearedAt.getTime(),
+            acked: r.acked,
+          },
+        ]
+      : [],
+  );
 }
 
 /** Stores cost points; a retried report inserts nothing new. */

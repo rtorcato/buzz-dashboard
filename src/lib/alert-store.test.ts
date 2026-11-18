@@ -6,8 +6,36 @@ const store = new Map<string, unknown>();
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({}));
 vi.mock("next/server", () => ({ connection: async () => {} }));
+// The cleared log (#88), in memory.
+type Row = {
+  key: string;
+  rule: string;
+  title: string;
+  appearedAt: number;
+  clearedAt: number | null;
+  acked: boolean;
+};
+const log: Row[] = [];
+const failing = { on: true };
 vi.mock("./history", () => ({
   historyEnabled: () => true,
+  openLogRows: async () => log.filter((r) => r.clearedAt === null),
+  logAppeared: async (
+    items: { key: string; rule: string; title: string }[],
+    at: number,
+  ) => {
+    for (const i of items) {
+      log.push({ ...i, appearedAt: at, clearedAt: null, acked: false });
+    }
+  },
+  logAcked: async (keys: string[]) => {
+    for (const r of log)
+      if (keys.includes(r.key) && !r.clearedAt) r.acked = true;
+  },
+  logCleared: async (keys: string[], at: number) => {
+    for (const r of log)
+      if (keys.includes(r.key) && !r.clearedAt) r.clearedAt = at;
+  },
   getSetting: async (k: string) => store.get(k) ?? null,
   setSetting: async (k: string, v: unknown) => void store.set(k, v),
   updateSetting: async (k: string, change: (v: unknown) => unknown) => {
@@ -23,9 +51,9 @@ vi.mock("./cost-source", () => ({
 vi.mock("./health-data", () => ({
   loadFailing: async () => ({
     source: "otel",
-    failing: [
-      { agent: "Gale", hour: { attempts: 14, errors: 6 }, since: 1_000 },
-    ],
+    failing: failing.on
+      ? [{ agent: "Gale", hour: { attempts: 14, errors: 6 }, since: 1_000 }]
+      : [],
   }),
 }));
 vi.mock("./github", () => ({ readGitHub: async () => ({ github: null }) }));
@@ -46,6 +74,8 @@ vi.stubGlobal("fetch", fetchMock);
 
 beforeEach(() => {
   store.clear();
+  log.length = 0;
+  failing.on = true;
   fetchMock.mockClear();
 });
 
@@ -92,4 +122,49 @@ it("adds a mute without dropping the others, and a pass keeps both", async () =>
     "merge:a": { until: null },
     "failing:Gale": { until: noon + 3_600_000 },
   });
+});
+
+it("logs when an item appears and when it clears, with no channels set up", async () => {
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  await runAlerts(noon);
+  await runAlerts(noon + 60_000);
+  expect(log).toEqual([
+    expect.objectContaining({
+      key: "failing:Gale",
+      rule: "failing",
+      appearedAt: noon,
+      clearedAt: null,
+      acked: false,
+    }),
+  ]);
+  failing.on = false;
+  await runAlerts(noon + 3_600_000);
+  expect(log).toHaveLength(1);
+  expect(log[0]).toMatchObject({ clearedAt: noon + 3_600_000, acked: false });
+});
+
+it("logs an ack before the item clears", async () => {
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  await runAlerts(noon);
+  await muteItems(["failing:Gale"], null, noon);
+  await runAlerts(noon + 60_000);
+  expect(log[0]).toMatchObject({ acked: true, clearedAt: null });
+  failing.on = false;
+  await runAlerts(noon + 120_000);
+  expect(log[0]).toMatchObject({ acked: true, clearedAt: noon + 120_000 });
+});
+
+it("keeps an item open while its source didn't answer", async () => {
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  // GitHub is unread here (github: null), so merge items can't be judged.
+  log.push({
+    key: "merge:a#1",
+    rule: "merge",
+    title: "a#1",
+    appearedAt: noon - 1000,
+    clearedAt: null,
+    acked: false,
+  });
+  await runAlerts(noon);
+  expect(log[0].clearedAt).toBeNull();
 });
