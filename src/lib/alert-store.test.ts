@@ -28,7 +28,10 @@ vi.mock("./health-data", () => ({
     ],
   }),
 }));
-vi.mock("./github", () => ({ readGitHub: async () => ({ github: null }) }));
+const readGitHub = vi.hoisted(() =>
+  vi.fn(async (): Promise<{ github: unknown }> => ({ github: null })),
+);
+vi.mock("./github", () => ({ readGitHub }));
 vi.stubEnv("BUZZ_PRIVATE_KEY", "test-key");
 
 const {
@@ -91,5 +94,33 @@ it("adds a mute without dropping the others, and a pass keeps both", async () =>
   expect(store.get("alert_mute")).toEqual({
     "merge:a": { until: null },
     "failing:Gale": { until: noon + 3_600_000 },
+  });
+});
+
+it("alerts on an ai-blocked issue right away, once", async () => {
+  await addChannel("ntfy", URL_);
+  const blocked = {
+    repo: "rtorcato/js-common",
+    number: 5,
+    title: "Fix the thing",
+    isPr: false,
+    labels: ["ai-blocked"],
+    closedAt: null,
+    claimedAt: 1_000,
+  };
+  readGitHub.mockResolvedValue({ github: { prs: [], claims: [blocked] } });
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  await runAlerts(noon);
+  await runAlerts(noon + 3_600_000 * 5);
+  readGitHub.mockReset();
+  readGitHub.mockResolvedValue({ github: null });
+  const sent = fetchMock.mock.calls.map((c) =>
+    JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
+  );
+  expect(sent.filter((b) => b.title === "js-common#5 is blocked")).toHaveLength(
+    1,
+  );
+  expect(store.get("alert_state")).toMatchObject({
+    "blocked:rtorcato/js-common#5": { sent: noon },
   });
 });

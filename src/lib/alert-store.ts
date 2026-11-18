@@ -32,9 +32,12 @@ import {
   updateSetting,
 } from "./history";
 import {
+  blockedItems,
+  blockedKey,
   excludedLabels,
   failingKey,
   failingRow,
+  githubReads,
   MERGE_READY,
   mergeKey,
 } from "./needs-you";
@@ -239,19 +242,36 @@ async function currentItems(
       });
     }
   }
-  if (!excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS).has(MERGE_READY)) {
+  const reads = githubReads(
+    excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS),
+  );
+  if (reads.length) {
     const { github } = await readGitHub();
     if (!github) complete = false;
-    for (const pr of github?.prs ?? []) {
-      if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
-      const key = `${pr.repo.split("/")[1]}#${pr.number}`;
-      items.push({
-        rule: "merge",
-        key: mergeKey(pr),
-        title: `${key} is ready to merge`,
-        detail: pr.title,
-        path: "/pipeline",
-      });
+    if (github && reads.includes("merge")) {
+      for (const pr of github.prs) {
+        if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
+        const key = `${pr.repo.split("/")[1]}#${pr.number}`;
+        items.push({
+          rule: "merge",
+          key: mergeKey(pr),
+          title: `${key} is ready to merge`,
+          detail: pr.title,
+          path: "/pipeline",
+        });
+      }
+    }
+    if (github && reads.includes("blocked")) {
+      for (const item of blockedItems(github)) {
+        const key = `${item.repo.split("/")[1]}#${item.number}`;
+        items.push({
+          rule: "blocked",
+          key: blockedKey(item),
+          title: `${key} is blocked`,
+          detail: item.title,
+          path: "/pipeline",
+        });
+      }
     }
   }
   return { items, complete };
