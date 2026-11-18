@@ -46,8 +46,10 @@ import {
   mergeKey,
   quietAgents,
   quietLine,
+  releaseKey,
   silentKey,
 } from "./needs-you";
+import { readReleases } from "./releases";
 import { readStatusFeed } from "./status-feed";
 
 // Alerts (#45), server side: the stored config with its channel URLs
@@ -321,6 +323,21 @@ async function currentItems(
           since: q.since * 1000,
         });
       }
+    }
+  }
+  const { releases } = process.env.GITHUB_TOKEN
+    ? await readReleases()
+    : { releases: null };
+  if (process.env.GITHUB_TOKEN && !releases) complete = false;
+  for (const r of releases?.repos ?? []) {
+    for (const run of r.waiting) {
+      items.push({
+        rule: "release",
+        key: releaseKey(r.repo, run.id),
+        title: `${r.repo.split("/")[1]} is waiting for release approval`,
+        detail: `${run.workflow} run #${run.number}`,
+        path: "/releases",
+      });
     }
   }
   return { items, complete };
