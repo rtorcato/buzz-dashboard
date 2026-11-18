@@ -69,6 +69,7 @@ export const mergeKey = (pr: { repo: string; number: number }) =>
 export const blockedKey = (item: { repo: string; number: number }) =>
   `blocked:${item.repo}#${item.number}`;
 export const silentKey = (agent: string) => `silent:${agent}`;
+export const budgetKey = (agent: string) => `budget:${agent}`;
 
 // A source the dashboard can't read, shown as a destructive Alert.
 export type SourceFailure = { source: string; detail: string };

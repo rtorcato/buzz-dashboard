@@ -89,7 +89,7 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: (usd) => `An agent goes over $${usd} today`,
     repeatMin: 24 * 60,
     repeat: "Once a day",
-    watched: false,
+    watched: true,
   },
 };
 

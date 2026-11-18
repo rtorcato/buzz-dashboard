@@ -6,7 +6,11 @@ const store = new Map<string, unknown>();
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({}));
 vi.mock("next/server", () => ({ connection: async () => {} }));
+const costByAgentSince = vi.hoisted(() =>
+  vi.fn(async (): Promise<{ agent: string; usd: number }[]> => []),
+);
 vi.mock("./history", () => ({
+  costByAgentSince,
   historyEnabled: () => true,
   getSetting: async (k: string) => store.get(k) ?? null,
   setSetting: async (k: string, v: unknown) => void store.set(k, v),
@@ -170,4 +174,25 @@ it("alerts once on an agent silent for the rule's hours while holding a claim", 
   readGitHub.mockResolvedValue({ github: null });
   readHive.mockResolvedValue({ agents: [] });
   expect(titles()).toEqual(["Fern is silent while holding a claim"]);
+});
+
+it("alerts on an agent over the daily budget, once, and not under it", async () => {
+  await addChannel("ntfy", URL_);
+  const noon = new Date(2026, 9, 23, 12).getTime();
+  costByAgentSince.mockResolvedValue([
+    { agent: "Fern", usd: 52.5 },
+    { agent: "Honey", usd: 12 },
+  ]);
+  await runAlerts(noon);
+  await runAlerts(noon + 3_600_000);
+  costByAgentSince.mockReset();
+  costByAgentSince.mockResolvedValue([]);
+  const sent = fetchMock.mock.calls
+    .map((c) =>
+      JSON.parse(String((c as unknown as [string, RequestInit])[1].body)),
+    )
+    .filter((b) => b.title.includes("today"));
+  expect(sent.map((b) => [b.title, b.message])).toEqual([
+    ["Fern is over $40 today", "$52.50 so far today · est."],
+  ]);
 });
