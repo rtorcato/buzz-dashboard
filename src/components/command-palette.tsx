@@ -74,6 +74,8 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   };
 
   const onInputKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Enter that confirms an IME composition must not pick a result.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((i) => Math.min(i + 1, results.length - 1));
