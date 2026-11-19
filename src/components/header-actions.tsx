@@ -1,21 +1,26 @@
 "use client";
 
-import { ClockAlert, RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { CostChip } from "@/components/cost-chip";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { STALE_AFTER_MS } from "@/lib/age";
 import { formatWhen } from "@/lib/format-time";
 import { REFRESH_MS, useSettings } from "@/lib/settings";
 
+// DESIGN.md → Obsidian redesign → Shell changes: the right side of the header,
+// in order: Live chip, Refresh, cost chip, Open in Buzz.
 export function HeaderActions({
   updatedAt,
   costToday,
+  buzzUrl,
 }: {
   updatedAt: string | null;
   /** Estimated dollars today, or null with no cost source (#42). */
   costToday: number | null;
+  /** Where Open in Buzz goes, or null when BUZZ_WEB_URL is unset. */
+  buzzUrl: string | null;
 }) {
   const router = useRouter();
   const settings = useSettings();
@@ -42,45 +47,17 @@ export function HeaderActions({
 
   return (
     <div className="ml-auto flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
-      {costToday !== null && (
-        <>
-          <CostChip value={costToday} />
-          <span
-            className="mx-1 hidden h-5 w-px bg-border sm:block"
-            aria-hidden
-          />
-        </>
-      )}
-      {!updatedAt ? (
-        <>
-          <span
-            className="size-2 rounded-full bg-muted-foreground/50"
-            aria-hidden
-          />
-          <span>Not connected</span>
-        </>
-      ) : stale ? (
-        <ClockAlert className="size-4 text-warning" aria-hidden />
-      ) : (
-        <span className="relative flex size-2" aria-hidden>
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60 motion-reduce:hidden" />
-          <span className="relative inline-flex size-2 rounded-full bg-success" />
-        </span>
-      )}
-      {updatedAt && (
-        <span
-          className={stale ? "text-warning tabular-nums" : "tabular-nums"}
-          suppressHydrationWarning
-        >
-          {/* Phones drop "Updated" to make room for the cost chip. */}
-          <span className="hidden sm:inline">Updated </span>
-          {formatWhen(now - age, now, settings)}
-        </span>
-      )}
+      <LiveChip
+        stale={stale}
+        label={
+          updatedAt ? formatWhen(now - age, now, settings) : "Not connected"
+        }
+        connected={updatedAt !== null}
+      />
       <Button
         variant="ghost"
         size="icon"
-        className="ml-1 size-9"
+        className="size-9"
         aria-label="Refresh"
         onClick={refresh}
         disabled={refreshing}
@@ -90,6 +67,64 @@ export function HeaderActions({
           aria-hidden
         />
       </Button>
+      {costToday !== null && (
+        <>
+          <span className="h-5 w-px bg-border max-sm:hidden" aria-hidden />
+          <CostChip value={costToday} />
+        </>
+      )}
+      {buzzUrl && (
+        // Solid violet, no glow. Phones keep the icon and the aria-label.
+        <a
+          href={buzzUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open in Buzz"
+          className={buttonVariants({
+            className: "h-9 gap-1.5 px-3 max-sm:w-9 max-sm:px-0",
+          })}
+        >
+          <ExternalLink aria-hidden />
+          <span className="max-sm:hidden">Open in Buzz</span>
+        </a>
+      )}
     </div>
+  );
+}
+
+// "synced 4s ago": a green dot while fresh, then warning with a
+// triangle-alert after 5 minutes without a successful refresh.
+function LiveChip({
+  stale,
+  label,
+  connected,
+}: {
+  stale: boolean;
+  label: string;
+  connected: boolean;
+}) {
+  return (
+    <span className="flex h-9 items-center gap-2 rounded-full border bg-chip px-3 text-xs">
+      {!connected ? (
+        <span
+          className="size-2 rounded-full bg-muted-foreground/60"
+          aria-hidden
+        />
+      ) : stale ? (
+        <TriangleAlert className="size-3.5 text-warning" aria-hidden />
+      ) : (
+        <span className="relative flex size-2" aria-hidden>
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60 motion-reduce:hidden" />
+          <span className="relative inline-flex size-2 rounded-full bg-success" />
+        </span>
+      )}
+      <span
+        className={stale ? "text-warning tabular-nums" : "tabular-nums"}
+        suppressHydrationWarning
+      >
+        {connected && <span className="max-sm:hidden">synced </span>}
+        {label}
+      </span>
+    </span>
   );
 }

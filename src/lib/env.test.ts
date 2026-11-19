@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { readServerEnv } = await import("./env");
+const { buzzWebUrl, readServerEnv } = await import("./env");
 
 describe("readServerEnv", () => {
   it("returns the credentials when all are set", () => {
@@ -64,5 +64,24 @@ describe("readServerEnv", () => {
     expect(() => readServerEnv({ GITHUB_TOKEN: "gh" })).toThrow(
       "Missing required values in .env:\nBUZZ_RELAY_URL\nBUZZ_PRIVATE_KEY",
     );
+  });
+});
+
+describe("buzzWebUrl", () => {
+  it("is null when unset or blank", () => {
+    expect(buzzWebUrl({})).toBeNull();
+    expect(buzzWebUrl({ BUZZ_WEB_URL: "  " })).toBeNull();
+  });
+
+  it("keeps an http(s) URL", () => {
+    expect(buzzWebUrl({ BUZZ_WEB_URL: "https://buzz.example/app" })).toBe(
+      "https://buzz.example/app",
+    );
+  });
+
+  it("drops anything that isn't http(s)", () => {
+    expect(buzzWebUrl({ BUZZ_WEB_URL: "javascript:alert(1)" })).toBeNull();
+    expect(buzzWebUrl({ BUZZ_WEB_URL: "not a url" })).toBeNull();
+    expect(buzzWebUrl({ BUZZ_WEB_URL: "wss://relay.example" })).toBeNull();
   });
 });

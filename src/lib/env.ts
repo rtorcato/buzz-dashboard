@@ -86,3 +86,22 @@ function tagOwner(authTag?: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Where the header's Open in Buzz button goes (BUZZ_WEB_URL), or null to hide
+ * it. Only http(s) URLs count, so a typo can't become a javascript: link.
+ */
+export function buzzWebUrl(
+  source: Record<string, string | undefined> = process.env,
+): string | null {
+  const raw = source.BUZZ_WEB_URL?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
