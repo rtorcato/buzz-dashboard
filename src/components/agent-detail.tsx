@@ -19,11 +19,12 @@ import {
   type FeedInfo,
   Morph,
   RuntimeRow,
-  Stat,
   StatusBadge,
 } from "@/components/agents-view";
 import { CopyButton } from "@/components/copy-button";
+import { KpiCard } from "@/components/kpi-card";
 import { AnimatedNumber } from "@/components/motion-primitives/animated-number";
+import { ActivityChart, type Series } from "@/components/overview-charts";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -32,10 +33,13 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Card } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatAge } from "@/lib/age";
 import { agentSlug, agentStatus, type DayGroup, morphName } from "@/lib/agents";
+import { formatDuration, median } from "@/lib/flow";
 import type { Agent } from "@/lib/hive";
 import { npubEncode } from "@/lib/npub";
+import { countInto } from "@/lib/overview-range";
 import type { Runtime } from "@/lib/status-feed";
 
 const STATE_LABEL = {
@@ -59,6 +63,9 @@ export function AgentDetail({
   activity,
   owners,
   admin = false,
+  turns,
+  prs,
+  buzzUrl,
 }: {
   agent: Agent;
   now: number;
@@ -72,11 +79,29 @@ export function AgentDetail({
   owners: string[];
   /** Signed in as the owner (the first admin): shows Agent settings. */
   admin?: boolean;
+  /** Turns and errors per day for 30 days, or null without a source. */
+  turns: { turns: number[]; errors: number[] } | null;
+  /** The agent's PRs from GitHub, newest first, or null when it isn't read. */
+  prs: AgentPr[] | null;
+  /** BUZZ_WEB_URL, where Open channel goes, or null to hide it. */
+  buzzUrl: string | null;
 }) {
   const status = agentStatus(a, now, runtime);
   const week = a.daily.reduce((n, d) => n + d, 0);
+  const days7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now * 1000);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (6 - i));
+    return d.getTime() / 1000;
+  });
+  const opened7 = (prs ?? []).filter((p) => p.createdAt >= days7[0]);
+  const medianMerge = median(
+    (prs ?? [])
+      .filter((p) => p.mergedAt !== null && p.mergedAt >= now - 7 * 86_400)
+      .map((p) => (p.mergedAt as number) - p.createdAt),
+  );
   const users = owners.map((o) => `user:${o}`).join(" ");
-  const prs =
+  const prsUrl =
     owners.length > 0
       ? `https://github.com/search?type=pullrequests&q=${encodeURIComponent(`${users} is:pr "@${a.name}"`)}`
       : null;
@@ -101,34 +126,53 @@ export function AgentDetail({
         </BreadcrumbList>
       </Breadcrumb>
 
-      <Card className="flex-col items-center gap-6 p-6 text-center sm:flex-row sm:items-start sm:text-left">
+      {/* DESIGN.md → Obsidian redesign → Agent page → Hero. The faint violet
+          radial in the corner is part of the background glow. */}
+      <Card
+        className="flex-col items-center gap-6 p-6 text-center sm:flex-row sm:items-start sm:text-left"
+        style={{
+          backgroundImage:
+            "radial-gradient(600px 300px at 0% 0%, rgb(124 108 255 / 0.12), transparent 60%)",
+        }}
+      >
         {/* Wrapped: Card drops its top padding when an img is the first child. */}
         <div className="shrink-0">
           <Morph name={morphName("avatar", agentSlug(a.name))}>
             <Avatar
               agent={a}
-              className="size-28 text-4xl ring-1 ring-border sm:size-44 sm:text-5xl"
+              className="size-[132px] rounded-[32px]! text-4xl ring-1 ring-border"
             />
           </Morph>
         </div>
         <div className="w-full min-w-0 space-y-3">
-          <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-            <Morph name={morphName("name", agentSlug(a.name))}>
-              <h1 className="text-3xl font-semibold tracking-tight">
-                {a.name}
-              </h1>
-            </Morph>
-            <StatusBadge status={status} />
-          </div>
-          <p className="text-muted-foreground">
-            {a.role && `${a.role} · `}
-            <span className="font-mono text-sm">@{a.name}</span> in PR headers
-          </p>
-          {prs && (
-            <div className="grid grid-cols-1 gap-2 sm:flex">
-              <OutLink href={prs}>PRs</OutLink>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
+                <Morph name={morphName("name", agentSlug(a.name))}>
+                  <h1 className="text-[40px] leading-tight font-bold tracking-[-0.025em]">
+                    {a.name}
+                  </h1>
+                </Morph>
+                <StatusBadge status={status} />
+              </div>
+              <p className="text-muted-foreground">
+                {a.role && `${a.role} · `}
+                <span className="font-mono text-sm">@{a.name}</span> in PR
+                headers
+              </p>
+              <MetaRow agent={a} runtime={runtime} now={now} />
             </div>
-          )}
+            {(buzzUrl || prs !== null || prsUrl) && (
+              <div className="grid grid-cols-1 gap-2 sm:flex sm:shrink-0">
+                {buzzUrl && (
+                  <OutLink href={buzzUrl} solid>
+                    Open channel
+                  </OutLink>
+                )}
+                {prsUrl && <OutLink href={prsUrl}>PRs</OutLink>}
+              </div>
+            )}
+          </div>
           <RuntimeRow
             runtime={runtime}
             now={now}
@@ -139,29 +183,56 @@ export function AgentDetail({
       </Card>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat
-          label="Messages today"
-          icon={MessageSquare}
-          value={<AnimatedNumber value={a.messagesToday} />}
-          sub={`${week} this week`}
+        <KpiCard
+          kpi={{
+            label: "Messages today",
+            icon: MessageSquare,
+            tone: "violet",
+            value: <AnimatedNumber value={a.messagesToday} />,
+            sub: `${week} this week`,
+            spark: a.daily,
+            delta: null,
+          }}
         />
-        <Stat
-          label="PRs opened (7d)"
-          icon={GitPullRequest}
-          value={<span className="text-muted-foreground">–</span>}
-          sub="Needs the GitHub reader"
+        <KpiCard
+          kpi={{
+            label: "PRs opened (7d)",
+            icon: GitPullRequest,
+            tone: "cyan",
+            value: prs ? String(opened7.length) : "–",
+            sub: prs
+              ? `${opened7.filter((p) => p.mergedAt !== null).length} merged`
+              : "GitHub isn't connected",
+            spark: prs
+              ? countInto(
+                  days7,
+                  opened7.map((p) => p.createdAt),
+                )
+              : null,
+            delta: null,
+          }}
         />
-        <Stat
-          label="Open claims"
-          icon={TicketCheck}
-          value={<span className="text-muted-foreground">–</span>}
-          sub="Needs the GitHub reader"
+        <KpiCard
+          kpi={{
+            label: "Open claims",
+            icon: TicketCheck,
+            tone: "pink",
+            value: "–",
+            sub: "Not read on this page yet",
+            spark: null,
+            delta: null,
+          }}
         />
-        <Stat
-          label="Median PR to merge"
-          icon={Timer}
-          value={<span className="text-muted-foreground">–</span>}
-          sub="Needs the GitHub reader"
+        <KpiCard
+          kpi={{
+            label: "Median PR to merge",
+            icon: Timer,
+            tone: "green",
+            value: medianMerge === null ? "–" : formatDuration(medianMerge),
+            sub: "Last 7 days",
+            spark: null,
+            delta: null,
+          }}
         />
       </div>
 
@@ -172,7 +243,7 @@ export function AgentDetail({
           <Section title="Open claims" className="order-1 xl:order-none">
             <NotRead what="Claims" />
           </Section>
-          <Activity daily={activity ?? a.daily} />
+          <TurnsAndErrors daily={activity ?? a.daily} turns={turns} now={now} />
           <Section title="Messages" className="order-5 xl:order-none">
             <AgentMessages groups={groups} />
           </Section>
@@ -197,11 +268,11 @@ export function AgentDetail({
             />
           )}
           <Section
-            title="Recent PRs"
+            title={hasMerges(prs, now) ? "Recent merges" : "Recent PRs"}
             className="order-3 xl:order-none"
-            action={prs && <OutLink href={prs}>All on GitHub</OutLink>}
+            action={prsUrl && <OutLink href={prsUrl}>All on GitHub</OutLink>}
           >
-            <NotRead what="PRs" />
+            <RecentPrs prs={prs} now={now} />
           </Section>
           <Section
             title="Where they talk"
@@ -246,13 +317,22 @@ function Section({
   );
 }
 
-function OutLink({ href, children }: { href: string; children: ReactNode }) {
+function OutLink({
+  href,
+  solid = false,
+  children,
+}: {
+  href: string;
+  /** Solid violet, no glow (Open channel). Otherwise outline. */
+  solid?: boolean;
+  children: ReactNode;
+}) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex h-11 items-center justify-center gap-1.5 rounded-md border px-3 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-9"
+      className={`inline-flex h-11 items-center justify-center gap-1.5 rounded-[10px] px-3 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:h-9 ${solid ? "bg-primary text-primary-foreground hover:bg-primary/80" : "border hover:bg-muted"}`}
     >
       {children}
       <ExternalLink className="size-3.5" aria-hidden />
@@ -271,71 +351,290 @@ function NotRead({ what }: { what: string }) {
 
 const RANGES = [7, 14, 30] as const;
 
-// A range the data doesn't cover (the 30-day query failed) isn't offered.
-function Activity({ daily }: { daily: number[] }) {
+/**
+ * DESIGN.md → Obsidian redesign → Agent page → Turns and errors, in the Hive
+ * activity style. Messages stay as the first line so the chart says something
+ * without a turn source. Latency has no source in v1.
+ */
+function TurnsAndErrors({
+  daily,
+  turns,
+  now,
+}: {
+  /** Messages per day, oldest first: 30 entries, or 7 if that query failed. */
+  daily: number[];
+  turns: { turns: number[]; errors: number[] } | null;
+  now: number;
+}) {
   const ranges = RANGES.filter((r) => r <= daily.length);
-  const [range, setRange] = useState<number>(7);
+  const [pick, setRange] = useState<number>(14);
+  const range = ranges.includes(pick as (typeof RANGES)[number])
+    ? pick
+    : ranges[ranges.length - 1];
+  const labels = Array.from({ length: range }, (_, i) =>
+    new Date((now - (range - 1 - i) * 86_400) * 1000).toLocaleDateString(
+      "en-US",
+      { month: "short", day: "numeric" },
+    ),
+  );
+  const series: Series[] = [
+    {
+      label: "Messages",
+      color: "var(--series-1)",
+      values: daily.slice(-range),
+    },
+    {
+      label: "Turns",
+      color: "var(--series-2)",
+      values: turns?.turns.slice(-range) ?? null,
+    },
+    {
+      label: "Errors",
+      color: "var(--series-3)",
+      values: turns?.errors.slice(-range) ?? null,
+    },
+    { label: "Latency", color: "var(--muted-foreground)", values: null },
+  ];
   return (
     <Section
-      title="Activity"
-      note={`Messages per day, last ${range} days`}
+      title="Turns and errors"
+      note={`Per day, last ${range} days`}
       className="order-4 xl:order-none"
       action={
         ranges.length > 1 && (
-          // The same toggle as the Agents filter. Phones always show 7 days.
-          <fieldset className="hidden h-9 rounded-md border shadow-xs sm:inline-flex">
-            <legend className="sr-only">Activity range</legend>
-            {ranges.map((r, i) => (
-              <button
+          <ToggleGroup
+            variant="outline"
+            aria-label="Range"
+            spacing={0}
+            value={[String(range)]}
+            onValueChange={(v) => v[0] && setRange(Number(v[0]))}
+          >
+            {ranges.map((r) => (
+              <ToggleGroupItem
                 key={r}
-                type="button"
-                aria-pressed={range === r}
-                onClick={() => setRange(r)}
-                className={`flex min-w-9 items-center px-3 text-sm tabular-nums focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${i ? "border-l" : ""} ${range === r ? "bg-accent font-medium" : "text-muted-foreground hover:bg-muted"}`}
+                value={String(r)}
+                className="h-9 px-3 tabular-nums"
               >
                 {r}d
-              </button>
+              </ToggleGroupItem>
             ))}
-          </fieldset>
+          </ToggleGroup>
         )
       }
     >
-      <Bars values={daily.slice(-range)} />
+      <ActivityChart series={series} labels={labels} height={180} />
     </Section>
   );
 }
 
-// ponytail: CSS bars, not a Recharts BarChart, like the cards' sparkline.
-function Bars({ values }: { values: number[] }) {
-  const max = Math.max(1, ...values);
-  // Counts above the bars only fit up to 14 of them; 30 use a tooltip.
-  const labelled = values.length <= 14;
+/** A PR the agent's `@Name` header claims, slimmed for the browser. */
+export type AgentPr = {
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  /** Unix seconds. */
+  createdAt: number;
+  mergedAt: number | null;
+  closedAt: number | null;
+  /** GitHub logins of its reviewers, deduplicated, author excluded. */
+  reviewers: string[];
+};
+
+const MERGES_WITHIN_S = 14 * 86_400;
+const hasMerges = (prs: AgentPr[] | null, now: number) =>
+  (prs ?? []).some(
+    (p) => p.mergedAt !== null && p.mergedAt >= now - MERGES_WITHIN_S,
+  );
+const prKey = (p: AgentPr) => `${p.repo.split("/").pop()}#${p.number}`;
+
+/**
+ * Recent merges (a merged PR in the last 14 days) or Recent PRs: the last 5
+ * PRs whose body names `@Name`, the same attribution as Pipeline.
+ */
+function RecentPrs({ prs, now }: { prs: AgentPr[] | null; now: number }) {
+  if (prs === null) return <NotRead what="PRs" />;
+  if (prs.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No PRs in the last 30 days.
+      </p>
+    );
+  }
+  if (hasMerges(prs, now)) {
+    const merged = prs
+      .filter((p) => p.mergedAt !== null && p.mergedAt >= now - MERGES_WITHIN_S)
+      .slice(0, 5);
+    const longest = Math.max(
+      1,
+      ...merged.map((p) => (p.mergedAt as number) - p.createdAt),
+    );
+    return (
+      <ul className="space-y-3 text-sm">
+        {merged.map((p) => {
+          const took = (p.mergedAt as number) - p.createdAt;
+          return (
+            <li key={p.url} className="space-y-1.5">
+              <a
+                href={p.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <span className="font-mono text-[13px] text-series-1">
+                  {prKey(p)}
+                </span>{" "}
+                {p.title}
+              </a>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="truncate font-mono">{p.repo}</span>
+                <Reviewers logins={p.reviewers} />
+                <span className="ml-auto rounded-full bg-success/12 px-2 py-0.5 font-medium text-success">
+                  Merged
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 flex-1 rounded-full bg-chip" aria-hidden>
+                  <div
+                    className="h-full rounded-full bg-series-1"
+                    style={{ width: `${Math.max(4, (took / longest) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  <span className="sr-only">open to merged in </span>
+                  {formatDuration(took)}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
   return (
-    <div
-      className="flex h-32 items-end gap-1 sm:gap-2"
-      role="img"
-      aria-label={`Messages per day, last ${values.length} days: ${values.join(", ")}`}
-    >
-      {values.map((v, i) => (
-        <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed day series.
-          key={i}
-          title={labelled ? undefined : String(v)}
-          // Phones show the last 7 days only (DESIGN.md → Rules).
-          className={`flex-1 flex-col items-center gap-1 text-xs text-muted-foreground tabular-nums ${i < values.length - 7 ? "hidden sm:flex" : "flex"}`}
-        >
-          {labelled && v}
-          <div
-            className="w-full rounded-sm"
-            style={{
-              height: `${Math.max(2, (v / max) * 96)}px`,
-              background:
-                i === values.length - 1 ? "var(--chart-1)" : "var(--chart-3)",
-            }}
-          />
+    <ul className="space-y-2.5 text-sm">
+      {prs.slice(0, 5).map((p) => {
+        const state =
+          p.mergedAt !== null
+            ? "merged"
+            : p.closedAt !== null
+              ? "closed"
+              : "open";
+        return (
+          <li key={p.url} className="flex items-center gap-2">
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATE_PILL[state]}`}
+            >
+              {state}
+            </span>
+            <a
+              href={p.url}
+              target="_blank"
+              rel="noreferrer"
+              className="min-w-0 flex-1 truncate outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {p.title}
+            </a>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {prKey(p)}
+            </span>
+            <span className="shrink-0 text-xs text-faint tabular-nums">
+              {formatAge((now - p.createdAt) * 1000)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const STATE_PILL = {
+  open: "bg-info/12 text-info",
+  merged: "bg-success/12 text-success",
+  closed: "bg-chip text-muted-foreground",
+} as const;
+
+function Reviewers({ logins }: { logins: string[] }) {
+  if (logins.length === 0) {
+    return (
+      <span>
+        –<span className="sr-only">no reviewers</span>
+      </span>
+    );
+  }
+  return (
+    <span className="flex -space-x-1.5">
+      {logins.slice(0, 4).map((l) => (
+        // biome-ignore lint/performance/noImgElement: a GitHub avatar at 20px; next/image would need the host allow-listed.
+        <img
+          key={l}
+          src={`https://github.com/${encodeURIComponent(l)}.png?size=40`}
+          alt={l}
+          title={l}
+          className="size-5 rounded-full bg-chip ring-2 ring-card"
+          referrerPolicy="no-referrer"
+          loading="lazy"
+        />
+      ))}
+    </span>
+  );
+}
+
+/** Home #channel, Model, Uptime and the truncated npub, in the hero. */
+function MetaRow({
+  agent: a,
+  runtime: r,
+  now,
+}: {
+  agent: Agent;
+  runtime?: Runtime;
+  now: number;
+}) {
+  const npub = npubEncode(a.pubkeys[0]);
+  const items: [string, ReactNode][] = [
+    ...(a.homeChannel
+      ? ([
+          [
+            "Home",
+            <span key="h" className="font-mono">
+              #{a.homeChannel}
+            </span>,
+          ],
+        ] as [string, ReactNode][])
+      : []),
+    ...(r?.model
+      ? ([
+          [
+            "Model",
+            <span key="m" className="font-mono">
+              {r.model}
+            </span>,
+          ],
+        ] as [string, ReactNode][])
+      : []),
+    ...(r?.state === "running"
+      ? ([["Uptime", formatAge((now - r.since) * 1000)]] as [
+          string,
+          ReactNode,
+        ][])
+      : []),
+    [
+      "npub",
+      <span key="n" className="font-mono" title={npub}>
+        {npub.slice(0, 12)}…{npub.slice(-4)}
+      </span>,
+    ],
+  ];
+  return (
+    <dl className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs sm:justify-start">
+      {items.map(([k, v]) => (
+        <div key={k} className="flex gap-1.5">
+          <dt className="text-muted-foreground">{k}</dt>
+          <dd>{v}</dd>
         </div>
       ))}
-    </div>
+    </dl>
   );
 }
 

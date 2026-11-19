@@ -2,12 +2,17 @@ import { cacheHit, modelTiers, type Tier, tierNames } from "./cost";
 import { CLAIM_LABELS, type Claim } from "./github";
 import { type HealthBucket, SLOT_S } from "./health";
 import type { CostRow } from "./history";
-import { OVERVIEW_RANGES, type OverviewRange } from "./overview-range";
+import {
+  bucketOf,
+  OVERVIEW_RANGES,
+  type OverviewRange,
+} from "./overview-range";
 
 // DESIGN.md → Obsidian redesign → Overview. Times are unix seconds, and day
 // and hour buckets follow the server clock, like "Today" on the other views.
 
 export {
+  countInto,
   DEFAULT_OVERVIEW_RANGE,
   greeting,
   OVERVIEW_RANGES,
@@ -44,22 +49,6 @@ export function bucketsFor(range: OverviewRange, now: Date): Buckets {
       return d.getTime() / 1000;
     }),
   };
-}
-
-/** The index of the bucket holding `at`, or -1 before the first. */
-function bucketOf(starts: number[], at: number): number {
-  for (let i = starts.length - 1; i >= 0; i--) if (at >= starts[i]) return i;
-  return -1;
-}
-
-/** How many of `times` fall in each bucket. */
-export function countInto(starts: number[], times: number[]): number[] {
-  const out = starts.map(() => 0);
-  for (const t of times) {
-    const i = bucketOf(starts, t);
-    if (i >= 0) out[i]++;
-  }
-  return out;
 }
 
 /** Sum `points` (at, value) into each bucket. */
