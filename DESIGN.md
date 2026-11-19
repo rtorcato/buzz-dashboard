@@ -12,7 +12,85 @@ The design spec for buzz-dashboard. Read it before writing any UI code, and keep
 - **Update:** the Releases view (#71) and the first-run setup wizard (#73), approved by rtorcato on 2026-10-23. The wizard saves to a config store that env always overrides, so build that store first.
 - **Update:** the Toolkit card on the agent page, approved by rtorcato on 2026-11-11. Then on 2026-11-11, admin editing of agents, the sign-in gate with per-hive roles, and the hive switcher. Build them in this order: sign-in and roles, hive config with the switcher, the read-only Toolkit, then edit mode. On 2026-11-11 rtorcato chose Buzz 1.0 for Save (see Saving). Edit mode ships once the hive runs Buzz 1.0, and everything before it works on 0.X.
 - **Update:** Unknown presence and Archived agents, the Memory card, cost read with the owner's sign-in, config History and real hive icons, approved by rtorcato on 2026-11-11. Build them after sign-in, roles and the switcher, in this order: Unknown and Archived, Memory, Cost with your sign-in. History ships with Edit, once the hive runs Buzz 1.0.
+- **Update:** the Obsidian redesign (see Obsidian redesign), approved by rtorcato on 2026-11-19. It is a new visual layer and an Overview page. Every rule and data source above still applies, and it replaces the light theme, the Tokens colours and Type where they disagree.
 - **Mockups:** kept outside the repo and not linked from it. This file is the spec, so build from the text below.
+
+## Obsidian redesign (2026-11-19)
+
+A darker, denser look for people who live in terminals. It changes how the dashboard looks and adds an Overview page. It does not change what any view reads, who can write, or the read-only rule.
+
+### Rules
+
+- **Dark only.** There is no light theme. Settings → Appearance and its theme toggle go, and `next-themes` is pinned to dark. The docs site keeps its own light and dark screenshots of the old UI until the capture script reruns.
+- **No gradients on controls.** Buttons, badges, labels, nav counts, avatars, chips, progress bars, model bars, stage bars and banners are solid colours or a flat tint. rtorcato's call: gradients on controls read as toy-like for this audience.
+- **Fades only in data and background.** Two gradients are allowed: the soft fade under a line or area chart (series colour at 35% to 0%, top to bottom) and the faint page glow (below). Nothing else.
+- **No glow shadows on controls.** Buttons have no coloured drop shadow. The hero portrait has a 1px border ring only.
+- **Honey stays on the logo.** Amber still means "waiting on you". Violet is the action colour.
+
+### Tokens
+
+These replace the `.dark` values in Tokens. `:root` light values are no longer used.
+
+```css
+.dark {
+  --background: #06070b;
+  --sidebar: #0b0d14;
+  --card: #0f1015;              /* solid; was rgba(255,255,255,.035) in the mockup */
+  --border: rgb(255 255 255 / 0.075);
+  --foreground: #eef0f6;        /* 16.7:1 on card */
+  --muted-foreground: #8a90a6;  /* 6.0:1 on card */
+  --faint: #7a809b;             /* axis labels, timestamps; 4.9:1 on card. The mockup's #5b6178 is 3.1:1 and fails AA */
+  --grid: rgb(255 255 255 / 0.06);
+  --chip: rgb(255 255 255 / 0.06);
+
+  --primary: #6a5ae8;           /* solid buttons and nav counts; white text 4.95:1. The mockup's #7c6cff is 3.9:1 with white and fails AA */
+  --primary-foreground: #ffffff;
+  --series-1: #7c6cff;          /* violet: messages, turns, Opus */
+  --series-2: #22d3ee;          /* cyan: agent turns, latency, Sonnet */
+  --series-3: #f472b6;          /* pink: errors, cost, Haiku */
+
+  --success: #34d399;           /* 9.9:1 */
+  --warning: #fbbf24;           /* 11.4:1 */
+  --destructive: #fb7185;       /* 7.1:1 */
+}
+```
+
+- **Page glow:** two radial gradients on the app shell, behind everything: violet `rgb(124 108 255 / .22)` at 15% / −10% (1200 × 600) and cyan `rgb(34 211 238 / .14)` at 95% / 5% (900 × 500), each fading to transparent at 60%. Static, never animated.
+- **Series colours** are for lines, bars and dots, not text. Every value they encode is also in a legend, tooltip or table.
+- **Status tints** (badges, the Needs-you banner, KPI icon tiles, deltas) are the status colour at 10–16% over `--card`, with the text in the full status colour.
+- **Radius:** cards 16px, buttons and inputs 10px, pills full.
+- **Type:** Inter for UI (`cv11`, `ss01`) and JetBrains Mono for keys, repos and npubs, replacing Geist. Page title 28px bold at −0.025em, KPI value 30px bold at −0.03em, all numbers `tabular-nums`.
+
+### Overview (new home)
+
+`/` becomes Overview and Agents moves to `/agents`. It sits first in the sidebar with `layout-dashboard`.
+
+1. **Greeting:** "Good afternoon" (by local time) and a muted line, "11 agents working across 9 channels. One needs a look." On the right, a `ToggleGroup` range (24h, 7d, 30d, 90d) that drives every chart on the page.
+2. **Needs you banner:** the existing Needs you card, collapsed to one row: an amber `triangle-alert` tile, "3 things need you", the items joined by " · " (muted), a stack of the involved agents' avatars and a ghost "Review all →" that opens the full card. Same items, colours and order as Needs you. With zero items it becomes the green "All clear" line.
+3. **KPI row:** 4 cards, each with a tinted icon tile, label, value, a delta pill (green up, red down, neutral grey for cost) with "vs last week", and a 44px sparkline with the fade. Active agents (violet), Messages 24h (cyan), PRs merged 7d (green), Est. cost 7d (pink). Cost hides without a cost source.
+4. **Hive activity** (2/3 width): a 14-day area chart of messages, agent turns and errors, smoothed lines with fades, a hover tooltip with the date and values, and a dashed crosshair.
+5. **Spend by model** (1/3): a donut with the 7-day total in the middle, a legend with solid bars, amounts and shares, then Cache hit and Tokens 7d. Hidden without a cost source.
+6. **Agents:** a 6-column grid of compact cards: 40px picture with a status dot, name, role, "Working on" one line, messages and a 7-day sparkline line (no fill). A failing agent gets a destructive border and 6% tint. A `ToggleGroup` filter (All, Working, Idle, Failing) with counts. Each card links to its agent page.
+7. **Bottom row:** Live feed (latest 6 events with avatars, mono keys in series colours, relative times), PR pipeline (solid horizontal bars per stage with counts, then "Median open → merged"), and "When the hive works" (a 7 × 24 heatmap of messages by hour in five violet steps, with the peak hour named under it).
+
+### Shell changes
+
+- **Header:** a search field on the left ("Search agents, PRs, channels…" with a `⌘K` hint) opens a command palette. It searches what the dashboard already loads and only navigates. On the right: the Live chip (green dot, "synced 4s ago"), the cost chip, then a solid violet **Open in Buzz** button (`external-link`). The mockup's "Dispatch" label is dropped: the dashboard never posts, so the button only opens Buzz.
+- **Sidebar:** Overview, Agents, Needs you (with count), Pipeline, Health, Cost, Timeline, Releases, Media, then a "Workspace" group with Settings. Counts are solid `--primary` pills, or solid `--destructive` when they are failures. The selected item gets the `--chip` fill and a 1px inset border. The sign-in block keeps its place at the bottom.
+
+### Agent page
+
+Same route, same cards and same data as Agent page. What changes:
+
+- **Hero:** the picture at 132px with a 32px radius and a 1px border ring, name 40px bold with the status badge, role line, then a meta row: Home `#channel`, Model, Uptime and the truncated npub in mono. On the right, a solid "Open channel" and an outline "Edit in Desktop" (both `external-link`). A faint violet radial in the top-left corner of the hero card is allowed as part of the background glow.
+- **KPI row:** the 4 stat cards get the Overview KPI style: icon tile, delta pill and fading sparkline.
+- **Turns and latency:** replaces the Activity bar chart. Turns, p50 latency and errors over 14 days, same style as Hive activity.
+- **Where the time goes:** share of turns by kind over 7 days, as labelled solid bars with percentages. It sits in the right column above Runtime.
+- **Recent merges:** a table of PR (key in violet mono and title), repo (mono), reviewer avatars, a solid "open → merged" bar with the duration, and a green Merged badge. It replaces the Recent PRs list for agents that merge; others keep Recent PRs.
+
+### Phones
+
+Phones follow the existing phone rules in each section, one column, with the Overview KPI row at 2 × 2 and the agents grid at 2 columns.
 
 ## Principle
 
