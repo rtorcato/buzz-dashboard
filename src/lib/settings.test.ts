@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULTS, parseSettings } from "./settings";
+import {
+  DEFAULTS,
+  getSettings,
+  parseSettings,
+  resetSettings,
+  updateSettings,
+} from "./settings";
+
+describe("settings with blocked storage", () => {
+  // The node test env has no `window`, so localStorage counts as blocked.
+  it("keeps an update in memory instead of resetting to defaults on the next read", () => {
+    updateSettings({ density: "compact" });
+    expect(getSettings().density).toBe("compact");
+    resetSettings();
+    expect(getSettings()).toEqual(DEFAULTS);
+  });
+});
 
 describe("parseSettings", () => {
   it("uses defaults for nothing, junk or a non-object", () => {

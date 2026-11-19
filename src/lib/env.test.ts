@@ -35,9 +35,9 @@ describe("readServerEnv", () => {
       readServerEnv({ ...base, BUZZ_AUTH_TAG: tag, BUZZ_OWNER_PUBKEY: "CD" })
         .buzzOwnerPubkey,
     ).toBe("cd");
-    expect(
-      readServerEnv({ ...base, BUZZ_AUTH_TAG: "not json" }).buzzOwnerPubkey,
-    ).toBeUndefined();
+    for (const bad of ["not json", '["p","AB"]', '["auth","AB",1,"sig"]']) {
+      expect(() => readServerEnv({ ...base, BUZZ_AUTH_TAG: bad })).toThrow();
+    }
   });
 
   it("reads BUZZ_OWNER_PUBKEY as a comma list, the first one attesting", () => {

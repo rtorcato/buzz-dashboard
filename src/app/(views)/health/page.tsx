@@ -123,13 +123,11 @@ export default async function HealthPage({
   }
 
   const agents = buildHealth({
-    agents: hive.agents
-      .filter((a) => a.lastSeenAt !== null)
-      .map((a) => ({
-        name: a.name,
-        lastSeenAt: a.lastSeenAt,
-        runtime: feed ? runtimeFor(a, feed.runtime) : undefined,
-      })),
+    agents: hive.agents.map((a) => ({
+      name: a.name,
+      lastSeenAt: a.lastSeenAt,
+      runtime: feed ? runtimeFor(a, feed.runtime) : undefined,
+    })),
     claims: (github.github?.claims ?? []).flatMap((c) =>
       c.agent
         ? [

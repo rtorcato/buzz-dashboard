@@ -20,7 +20,7 @@ export type Agent = {
   picture: string | null;
   /** Every identity folded into this agent: older copies and renamed ones. */
   pubkeys: string[];
-  /** Unix seconds of the newest message, or null if silent all week. */
+  /** Unix seconds of the newest message, or null if silent all week (still listed). */
   lastSeenAt: number | null;
   /** First line of the newest message. */
   workingOn: string | null;
@@ -128,6 +128,30 @@ const safePicture = (url: unknown) =>
     ? url
     : null;
 
+/** The sha of a picture hosted on our relay's /media/, which needs auth. */
+export function relayMediaSha(picture: string, relayUrl: string) {
+  try {
+    const url = new URL(picture);
+    const relay = new URL(relayUrl);
+    if (url.protocol !== "https:" || url.host !== relay.host) return null;
+    return (
+      /^\/media\/([0-9a-f]{64})(\.[a-z0-9]+)?$/.exec(url.pathname)?.[1] ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+// A browser can't load relay media, so those go through /api/avatar (#112).
+export const avatarSrc = (
+  picture: string | null,
+  pubkey: string,
+  relayUrl: string,
+) =>
+  picture && relayMediaSha(picture, relayUrl)
+    ? `/api/avatar/${pubkey}`
+    : picture;
+
 // NIP-OA: the owner signs sha256("nostr:agent-auth:<agent>:<conditions>").
 // ponytail: checks who signed, not the conditions; profiles carry none today.
 export function isAttested(event: NostrEvent, owner: string): boolean {
@@ -201,6 +225,7 @@ export function buildHive(
   const profiles = new Map<string, Profile>();
   const channels = new Map<string, string>();
   const messages: NostrEvent[] = [];
+  let archiveList: NostrEvent | undefined;
   for (const event of events) {
     if (event.kind === 0) {
       const old = profiles.get(event.pubkey);
@@ -211,6 +236,10 @@ export function buildHive(
       const id = tag(event, "d");
       const name = tag(event, "name");
       if (id && name) channels.set(id, name);
+    } else if (event.kind === 13535) {
+      if (!archiveList || archiveList.created_at < event.created_at) {
+        archiveList = event;
+      }
     } else if (event.kind === 9 && event.created_at >= days[0]) {
       messages.push(event);
     }
@@ -228,10 +257,19 @@ export function buildHive(
     else byPubkey.set(m.pubkey, [m]);
   }
 
+  // NIP-IA: identities the relay archived drop off the roster; their messages
+  // stay in the feed. The relay emits kind 13535 itself and never ingests it,
+  // so the author isn't re-checked here; queryRelay has verified its signature.
+  const archived = new Set(
+    archiveList?.tags.filter((t) => t[0] === "p").map((t) => t[1]),
+  );
+
+  // The roster is every attested, unarchived profile, silent or not.
   // Dedupe: one card per name, folding in stale copies and aliases.
   const groups = new Map<string, Profile[]>();
   for (const p of profiles.values()) {
-    if (p.isAgent) groups.set(p.name, [...(groups.get(p.name) ?? []), p]);
+    if (p.isAgent && !archived.has(p.pubkey))
+      groups.set(p.name, [...(groups.get(p.name) ?? []), p]);
   }
 
   const agents = [...groups].map(([name, group]): Agent => {
@@ -322,7 +360,8 @@ export async function queryAll(
       sign,
     );
     for (const e of batch) seen.set(e.id, e);
-    if (batch.length < RELAY_CAP) break;
+    // Count what the relay sent, so a dropped bad event can't end paging early.
+    if (!batch.length || (batch.received ?? batch.length) < RELAY_CAP) break;
     // `until` is inclusive, so the oldest second is fetched again and deduped.
     until = Math.min(...batch.map((e) => e.created_at));
   }
@@ -338,11 +377,22 @@ export async function getHive(now = new Date()): Promise<Hive> {
       "BUZZ_OWNER_PUBKEY must be the owner's 64-character hex key",
     );
   }
-  const [meta, messages] = await Promise.all([
-    queryRelay(env, [{ kinds: [0] }, { kinds: [39000] }]),
+  // Profiles and channels page past the relay cap like messages do (#114).
+  const [profiles, channels, archive, messages] = await Promise.all([
+    queryAll(env, { kinds: [0] }),
+    queryAll(env, { kinds: [39000] }),
+    queryRelay(env, [{ kinds: [13535] }]),
     queryAll(env, { kinds: [9], since: dayStarts(now)[0] }),
   ]);
-  return buildHive([...meta, ...messages], now, owner);
+  const hive = buildHive(
+    [...profiles, ...channels, ...archive, ...messages],
+    now,
+    owner,
+  );
+  for (const a of hive.agents) {
+    a.picture = avatarSrc(a.picture, a.pubkeys[0], env.buzzRelayUrl);
+  }
+  return hive;
 }
 
 const ACTIVITY_DAYS = 30;
@@ -363,6 +413,33 @@ export async function getActivity(
     since: days[0],
   });
   return perDay(events, days);
+}
+
+// The alerts pass reads the hive outside a request, every minute. A relay read
+// pages a week of messages, so it reuses one for up to 5 minutes. After a
+// failed read it waits 2 minutes before trying again, so a down relay isn't
+// asked for the whole week on every pass.
+const HIVE_TTL_MS = 5 * 60_000;
+const HIVE_RETRY_MS = 2 * 60_000;
+let lastHive: { hive: Hive; at: number } | undefined;
+let lastFailAt: number | undefined;
+
+/** The hive for the alerts pass, or null when the relay doesn't answer. */
+export async function readHive(now = Date.now()): Promise<Hive | null> {
+  if (lastHive && now - lastHive.at < HIVE_TTL_MS) return lastHive.hive;
+  if (lastFailAt !== undefined && now - lastFailAt < HIVE_RETRY_MS) {
+    return null;
+  }
+  try {
+    lastHive = { hive: await getHive(new Date(now)), at: now };
+    lastFailAt = undefined;
+    return lastHive.hive;
+  } catch (err) {
+    // No stale fallback: old presence would make a working agent look silent.
+    lastFailAt = now;
+    console.error(`Alerts, relay: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
 }
 
 export type HiveResult =

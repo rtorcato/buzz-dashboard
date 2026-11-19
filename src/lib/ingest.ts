@@ -4,7 +4,7 @@ import { and, eq, max } from "drizzle-orm";
 import { runAlerts } from "./alert-store";
 import { loadSignerRecord } from "./cost-source";
 import { readServerEnv } from "./env";
-import { type GitHub, readGitHub } from "./github";
+import { type GitHub, type GitHubItem, readGitHub } from "./github";
 import {
   historyDb,
   insertAgentEvents,
@@ -52,9 +52,47 @@ const BATCH = 1000;
 
 const toDate = (secs: number) => new Date(secs * 1000);
 
-/** PR opened / reviewed / merged / closed and issue claims, one row each. */
+/** Label changes on one issue or PR (#54), keyed on item, label and time. */
+function labelRows(item: GitHubItem): NewHistoryEvent[] {
+  const key = `${item.repo}#${item.number}`;
+  return item.labelEvents.map((e) => ({
+    source: "github",
+    sourceId: `${key}:label:${e.action}:${e.label}:${e.at}`,
+    kind: "labelled",
+    at: toDate(e.at),
+    actor: e.actor,
+    repo: item.repo,
+    title: item.title,
+    url: item.url,
+    data: { number: item.number, label: e.label, action: e.action },
+  }));
+}
+
+/**
+ * PR opened / reviewed / merged / closed, issue claims, label changes and
+ * releases, one row each.
+ */
 export function githubRows(github: GitHub): NewHistoryEvent[] {
   const rows: NewHistoryEvent[] = [];
+  // A claimed open PR is also in `prs`; the source id dedupes its labels.
+  const labelled = new Map<string, NewHistoryEvent>();
+  for (const item of [...github.prs, ...github.claims]) {
+    for (const row of labelRows(item)) labelled.set(row.sourceId, row);
+  }
+  rows.push(...labelled.values());
+  for (const r of github.releases) {
+    rows.push({
+      source: "github",
+      sourceId: `${r.repo}@${r.tag}:released`,
+      kind: "released",
+      at: toDate(r.publishedAt),
+      actor: r.author,
+      repo: r.repo,
+      title: r.name,
+      url: r.url,
+      data: { tag: r.tag, prerelease: r.prerelease },
+    });
+  }
   for (const pr of github.prs) {
     const key = `${pr.repo}#${pr.number}`;
     const base = {

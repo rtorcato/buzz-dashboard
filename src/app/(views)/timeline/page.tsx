@@ -10,6 +10,7 @@ import {
   Hexagon,
   type LucideIcon,
   MessageSquare,
+  OctagonAlert,
   Tag,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -19,6 +20,7 @@ import { EmptyState, SourceDown } from "@/components/states";
 import { TimelineFilters } from "@/components/timeline-filters";
 import { TimelineLiveStats } from "@/components/timeline-live-stats";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { loadGitHub } from "@/lib/github";
@@ -32,6 +34,7 @@ import {
 } from "@/lib/history";
 import { agentName, dayStarts, loadHive } from "@/lib/hive";
 import { githubRows } from "@/lib/ingest";
+import { getNeedsYou, needsYouRefs } from "@/lib/needs-you";
 import { npubEncode } from "@/lib/npub";
 import {
   type DayGroup,
@@ -119,11 +122,26 @@ function SourceBadge({ source }: { source: Row["source"] }) {
   );
 }
 
-function FeedRow({ row, q }: { row: Row; q: string }) {
+function FeedRow({
+  row,
+  q,
+  needsYou,
+}: {
+  row: Row;
+  q: string;
+  needsYou: Set<string>;
+}) {
   const Icon = ICONS[row.icon];
   const where = row.source === "buzz" ? "in Buzz" : "on GitHub";
+  // DESIGN.md → Timeline: a row that needs the owner gets a 5% tint and a badge.
+  const flagged = row.ref !== undefined && needsYou.has(row.ref);
   return (
-    <li className="relative grid grid-cols-[auto_1fr] gap-x-3 px-4 py-4 sm:px-6 md:grid-cols-[4.5rem_auto_1fr_auto]">
+    <li
+      className={cn(
+        "relative grid grid-cols-[auto_1fr] gap-x-3 px-4 py-4 sm:px-6 md:grid-cols-[4.5rem_auto_1fr_auto]",
+        flagged && "bg-destructive/5",
+      )}
+    >
       <span className="hidden pt-1.5 font-mono text-sm text-muted-foreground tabular-nums md:block">
         <LocalTime at={row.at} />
       </span>
@@ -144,6 +162,15 @@ function FeedRow({ row, q }: { row: Row; q: string }) {
             <span className="font-mono text-[13px]">
               <Highlight text={row.target} q={q} />
             </span>
+          )}
+          {flagged && (
+            <Badge
+              variant="destructive"
+              className="text-red-700 dark:text-destructive"
+            >
+              <OctagonAlert aria-hidden />
+              Needs you
+            </Badge>
           )}
         </p>
         {row.snippet && (
@@ -266,7 +293,10 @@ export default async function TimelinePage({
   const params = await searchParams;
   const filters = parseFilters(params);
   const now = new Date();
-  const { hive } = await loadHive();
+  const [{ hive }, needsYou] = await Promise.all([
+    loadHive(),
+    getNeedsYou().then(needsYouRefs),
+  ]);
   const agents = hive?.agents ?? [];
   const byKey = new Map(
     agents.flatMap((a) => a.pubkeys.map((k) => [k, a.name])),
@@ -292,6 +322,7 @@ export default async function TimelinePage({
         // Live Buzz events carry the channel's name, not its id.
         names={{ ...names, channel: (name) => name }}
         now={now}
+        needsYou={needsYou}
       />
     );
   }
@@ -403,7 +434,12 @@ export default async function TimelinePage({
               <DayLabel group={g} today={dayStart(now.getTime() / 1000)} />
               <ol className="divide-y">
                 {g.rows.map((r) => (
-                  <FeedRow key={r.id} row={r} q={filters.q} />
+                  <FeedRow
+                    key={r.id}
+                    row={r}
+                    q={filters.q}
+                    needsYou={needsYou}
+                  />
                 ))}
               </ol>
             </section>
@@ -449,20 +485,20 @@ async function readHistory(query: EventQuery, limit: number, search: boolean) {
 // DESIGN.md → Views → Timeline without a database (#53): today's events from
 // the GitHub and relay reads the other views already make, grouped by hour.
 // No search, no range and no "stored since" footer, and no nag to add one.
-// ponytail: no "Needs you" tint on rows yet; Needs you counts items per type,
-// not per PR, so it needs per-item keys first.
 async function LiveTimeline({
   filters,
   actors,
   agents,
   names,
   now,
+  needsYou,
 }: {
   filters: Filters;
   actors: string[] | null;
   agents: string[];
   names: Names;
   now: Date;
+  needsYou: Set<string>;
 }) {
   const [{ hive }, { github }] = await Promise.all([loadHive(), loadGitHub()]);
   const today = dayStart(now.getTime() / 1000);
@@ -540,7 +576,7 @@ async function LiveTimeline({
               </h3>
               <ol className="divide-y">
                 {g.rows.map((r) => (
-                  <FeedRow key={r.id} row={r} q="" />
+                  <FeedRow key={r.id} row={r} q="" needsYou={needsYou} />
                 ))}
               </ol>
             </section>

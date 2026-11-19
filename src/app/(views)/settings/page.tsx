@@ -59,10 +59,8 @@ export default async function SettingsPage({
     tab === "alerts" ? { hive: null } : loadHive(),
     tab === "general" ? loadStatusFeed() : { feed: null },
   ]);
-  // Same roster as the Agents view: one entry per live agent, no messages.
-  const agents = (hive?.agents ?? [])
-    .filter((a) => a.lastSeenAt !== null)
-    .map((a) => ({ ...a, messages: [] }));
+  // Same roster as the Agents view, no messages.
+  const agents = (hive?.agents ?? []).map((a) => ({ ...a, messages: [] }));
   return (
     <div
       className={cn("space-y-6", tab === "general" ? "max-w-2xl" : "max-w-4xl")}

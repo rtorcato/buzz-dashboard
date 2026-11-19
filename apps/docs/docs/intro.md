@@ -6,31 +6,36 @@ sidebar_position: 0
 
 # buzz-dashboard
 
-buzz-dashboard is a read-only dashboard for a Buzz hive: the humans and agents that work together on a Buzz relay and ship through GitHub. It shows what the agents are doing, where each issue and pull request sits in your `ai-*` label pipeline, and which releases and CI runs are waiting on you.
+buzz-dashboard is a read-only dashboard for a Buzz hive: the humans and agents that work together on a Buzz relay and ship through GitHub. It shows what the agents are doing, how pull requests move through your `ai-*` label pipeline, and which ones are waiting on you.
 
-It never posts, labels, merges or releases. Every action in the UI is a link out to GitHub or npm.
+It never posts to your relay, and never labels, merges or releases anything on GitHub. Every action on your work is a link out to GitHub. The only things it changes are its own settings, behind [owner sign-in](./owner-sign-in.md).
 
 ## What you see
 
-Every view starts with a **Needs you** card that answers one question first: does anything need me right now? It lists releases waiting for approval, red CI on `main`, blocked issues, stopped agents that hold claims, a paused hive and `merge-ready` pull requests. With nothing to do it collapses to one "All clear" line.
+Every view starts with a **Needs you** card that answers one question first: does anything need me right now? Today it lists a paused hive, `merge-ready` pull requests and failing agents. Blocked issues, release approvals and red CI on `main` aren't read yet, so the card never says "All clear". With the history store, the signed-in owner can snooze or acknowledge a row.
 
-Under it are five views:
+Under it are these views. *History* marks the ones that need the optional [history store](./optional-views.md#history-store):
 
 | View | Shows |
 |---|---|
-| **Agents** | One card per agent: status, what it is working on, last seen, home channel, messages today and a 7-day sparkline. Each card opens an agent page with open claims, activity and recent pull requests. |
-| **Pipeline** | Issues and pull requests per label stage (`ai-ready`, `ai-wip`, `ai-review`, `ai-changes`, `ai-blocked`), opened versus merged per day, and a breakdown by repo and by agent. |
-| **Releases** | Releases waiting for approval, red CI on `main`, and the latest npm version of each package. |
-| **Timeline** | Today's channel messages, grouped by hour, with a filter by type and agent. |
+| **Agents** | One card per agent: status, last seen, home channel, messages today and a 7-day sparkline. Each card opens an agent page with activity and messages. Its open claims and recent pull requests aren't read yet. |
+| **Health** (history) | Error rates per agent from the [cost source](./cost-source.md), an hourly chart for each, and which agents are failing (over 25% errors for 15 minutes). |
+| **Pipeline** | The **Flow** tab (history): median cycle time, change requests, stalled pull requests and time spent in each step, by repo and by agent, over 7, 30 or 90 days. The **Now** tab, with label counts, isn't built yet. |
+| **Timeline** | Today's GitHub and Buzz events, grouped by hour. With the history store it adds search, filters by repo, agent, source and type, and ranges up to 90 days. |
+| **Cost** (history) | Estimated spend per day by agent and model, tokens, cache hit rate and top agents. See [Cost source](./cost-source.md). |
 | **Media** | Screenshots and mockups from a public R2 bucket, grouped by repo and date. |
+| **Settings** | Browser preferences, [Alerts](./alerts.md) (history) and Sources, where the owner connects the cost source. |
+
+A **Releases** view is planned but not built yet.
 
 ## How it works
 
-The dashboard is a Next.js server. It reads from three places, all with read-only credentials, and none of them reach the browser:
+The dashboard is a Next.js server. It reads from these places, with read-only credentials that never reach the browser:
 
 - **A Buzz relay**, over a WebSocket, signed in with a dedicated read-only Nostr identity. This feeds Agents and Timeline. It is the only required source.
-- **GitHub**, with an optional read-only token. This feeds Pipeline, Releases and parts of Needs you.
+- **GitHub**, with an optional read-only token. This feeds Timeline, the history store and the `merge-ready` row of Needs you.
 - **A Cloudflare R2 bucket**, with an optional read-only token. This feeds Media and the runtime and usage status feed.
+- **A Postgres database**, optional, set with `DATABASE_URL`. This is the history store behind Health, Cost, Pipeline Flow, Timeline search and Alerts.
 
 A view whose source is missing or down shows a "Can't reach …" alert and the rest of the app keeps working.
 
@@ -39,5 +44,5 @@ A view whose source is missing or down shows a "Can't reach …" alert and the r
 - [Quick start](./quick-start.md): run the image with the minimum configuration.
 - [Configuration](./configuration.md): every environment variable.
 - [Connect your Buzz relay](./relay-identity.md): create the read-only identity.
-- [Optional views](./optional-views.md): GitHub, Media and the status feed.
+- [Optional views](./optional-views.md): GitHub, Media, the status feed and the history store.
 - [Security](./security.md): run it behind authentication.

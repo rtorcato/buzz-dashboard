@@ -39,7 +39,7 @@ docker run -d --name buzz-dashboard \
   ghcr.io/rtorcato/buzz-dashboard:<tag>
 ```
 
-Open `http://localhost:3000`. The port is bound to loopback on purpose: the dashboard has no login, so publish it through a layer that does. See [Security](./security.md).
+Open `http://localhost:3000`. The port is bound to loopback on purpose: reading needs no login ([owner sign-in](./owner-sign-in.md) only guards the dashboard's own settings), so publish it through a layer that has one. See [Security](./security.md).
 
 If the package is private, run `docker login ghcr.io -u <user>` first with a token that has only `read:packages`.
 

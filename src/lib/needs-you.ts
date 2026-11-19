@@ -1,8 +1,18 @@
 import { connection } from "next/server";
+import { cache } from "react";
+import { formatAge } from "./age";
+import { runtimeFor } from "./agents";
 import { type GitHub, loadGitHub } from "./github";
-import type { FailingAgent, HealthSource } from "./health";
-import { loadFailing } from "./health-data";
-import { loadHive } from "./hive";
+import {
+  type FailingAgent,
+  type HealthBucket,
+  type HealthSource,
+  type QuietClaim,
+  quietClaims,
+} from "./health";
+import { loadFailing, recentBuckets } from "./health-data";
+import { type Hive, loadHive } from "./hive";
+import { loadReleases, type Releases } from "./releases";
 import { sampleMergeRow, sampleMode } from "./sample-data";
 import { loadStatusFeed, type StatusFeed } from "./status-feed";
 import { trippedDetail, usageState } from "./usage";
@@ -57,6 +67,12 @@ export type NeedsYouRow = {
 export const failingKey = (agent: string) => `failing:${agent}`;
 export const mergeKey = (pr: { repo: string; number: number }) =>
   `merge:${pr.repo}#${pr.number}`;
+export const blockedKey = (item: { repo: string; number: number }) =>
+  `blocked:${item.repo}#${item.number}`;
+export const silentKey = (agent: string) => `silent:${agent}`;
+export const budgetKey = (agent: string) => `budget:${agent}`;
+export const releaseKey = (repo: string, runId: number) =>
+  `release:${repo}#run-${runId}`;
 
 // A source the dashboard can't read, shown as a destructive Alert.
 export type SourceFailure = { source: string; detail: string };
@@ -123,6 +139,7 @@ export function pausedRow(feed: StatusFeed | null, now: number) {
 }
 
 export const MERGE_READY = "merge-ready";
+export const AI_BLOCKED = "ai-blocked";
 
 /** NEEDS_YOU_EXCLUDE_LABELS, a comma list of labels to leave off the card. */
 export const excludedLabels = (raw: string | undefined) =>
@@ -152,6 +169,108 @@ export function mergeRow(github: GitHub) {
   } satisfies NeedsYouRow;
 }
 
+/** Open issues and PRs an agent gave up on, labelled ai-blocked. */
+export const blockedItems = (github: GitHub) =>
+  github.claims.filter(
+    (c) => c.closedAt === null && c.labels.includes(AI_BLOCKED),
+  );
+
+/** The "Issue blocked" row for open ai-blocked items, or null when none. */
+export function blockedRow(github: GitHub) {
+  const items = blockedItems(github);
+  if (items.length === 0) return null;
+  const noun = items.some((i) => i.isPr) ? "item" : "issue";
+  const oldest = Math.min(...items.map((i) => i.claimedAt));
+  return {
+    kind: "blocked",
+    title: `${items.length} ${noun}${items.length > 1 ? "s" : ""} blocked`,
+    detail: items.map((i) => `${i.repo.split("/")[1]}#${i.number}`).join(", "),
+    count: items.length,
+    since: new Date(oldest * 1000).toISOString(),
+    keys: items.map(blockedKey),
+  } satisfies NeedsYouRow;
+}
+
+/**
+ * Who holds a claim and since when they went quiet, from the sources Health
+ * reads: relay presence, the status feed's turns, stored health events and the
+ * GitHub claims with a known agent.
+ */
+export function quietAgents(
+  hive: Hive,
+  feed: StatusFeed | null,
+  github: GitHub,
+  buckets: HealthBucket[],
+): QuietClaim[] {
+  return quietClaims({
+    agents: hive.agents.map((a) => ({
+      name: a.name,
+      lastSeenAt: a.lastSeenAt,
+      runtime: feed ? runtimeFor(a, feed.runtime) : undefined,
+    })),
+    claims: github.claims.flatMap((c) =>
+      c.agent
+        ? [
+            {
+              agent: c.agent,
+              key: `${c.repo.split("/")[1]}#${c.number}`,
+              claimedAt: c.claimedAt,
+            },
+          ]
+        : [],
+    ),
+    buckets,
+  });
+}
+
+/** Heads-up: quiet this long while holding a claim (DESIGN.md → Shell). */
+export const HEADS_UP_QUIET_S = 2 * 3600;
+
+/** "Honey has been quiet for 3h while holding js-common#124 and 1 more." */
+export const quietLine = (q: QuietClaim, now: number) =>
+  `${q.agent} has been quiet for ${formatAge((now - q.since) * 1000)} while holding ${q.key}${q.more ? ` and ${q.more} more` : ""}.`;
+
+const short = (repo: string) => repo.split("/").pop() ?? repo;
+const iso = (s: number) => new Date(s * 1000).toISOString();
+
+/** The "Release waiting for approval" row, or null when none wait. */
+export function releaseRow(releases: Releases) {
+  const runs = releases.repos.flatMap((r) =>
+    r.waiting.map((w) => ({ repo: r.repo, ...w })),
+  );
+  if (runs.length === 0) return null;
+  const repos = [...new Set(runs.map((r) => short(r.repo)))];
+  return {
+    kind: "release",
+    title:
+      runs.length === 1
+        ? "1 release waiting for your approval"
+        : `${runs.length} releases waiting for your approval`,
+    detail: repos.join(", "),
+    count: runs.length,
+    since: iso(Math.min(...runs.map((r) => r.createdAt))),
+    keys: runs.map((r) => releaseKey(r.repo, r.id)),
+  } satisfies NeedsYouRow;
+}
+
+/** The "Red CI on main" row, or null when every default branch is green. */
+export function ciRow(releases: Releases) {
+  const red = releases.repos.filter((r) => r.redCi);
+  if (red.length === 0) return null;
+  return {
+    kind: "ci",
+    title:
+      red.length === 1
+        ? "Red CI on main in 1 repo"
+        : `Red CI on main in ${red.length} repos`,
+    detail: red.map((r) => short(r.repo)).join(", "),
+    count: red.length,
+    since: iso(
+      Math.min(...red.map((r) => r.redCi?.since || Date.now() / 1000)),
+    ),
+  } satisfies NeedsYouRow;
+}
+
 /** The "Agent failing turns" row for one agent (DESIGN.md → Shell). */
 export function failingRow(f: FailingAgent, source: HealthSource) {
   const { attempts, errors } = f.hour;
@@ -172,9 +291,27 @@ export function failingRow(f: FailingAgent, source: HealthSource) {
   } satisfies NeedsYouRow;
 }
 
+// The Needs you items read from GitHub, by the label that marks them.
+const GITHUB_READS = {
+  merge: "merge-ready PRs",
+  blocked: "blocked issues",
+} as const;
+const GITHUB_LABELS = { merge: MERGE_READY, blocked: AI_BLOCKED } as const;
+
+/** The GitHub items Needs you reads, less those NEEDS_YOU_EXCLUDE_LABELS hides. */
+export const githubReads = (excluded: Set<string>) =>
+  (["merge", "blocked"] as const).filter(
+    (r) => !excluded.has(GITHUB_LABELS[r]),
+  );
+
 // A cold GitHub read takes about 20s. The card doesn't hold every page for it;
 // the read carries on and the next request shows the row.
 const GITHUB_WAIT_MS = 2_000;
+const briefly = <T>(p: Promise<T>) =>
+  Promise.race([
+    p,
+    new Promise<null>((r) => setTimeout(r, GITHUB_WAIT_MS, null)),
+  ]);
 
 export function countsByView(
   rows: NeedsYouRow[],
@@ -187,7 +324,18 @@ export function countsByView(
   return counts;
 }
 
-export async function getNeedsYou(): Promise<NeedsYou> {
+/** The "owner/repo#N" refs of GitHub items that need the owner, for row tints. */
+export const needsYouRefs = (data: NeedsYou) =>
+  new Set(
+    data.rows.flatMap((r) =>
+      (r.keys ?? []).flatMap(
+        (k) => k.match(/^(?:merge|blocked):(.+#\d+)$/)?.[1] ?? [],
+      ),
+    ),
+  );
+
+// cache: the layout and the Timeline both read it in one request.
+export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
   // Render per request so the data is never baked in at build time.
   await connection();
   if (sampleMode()) {
@@ -204,10 +352,13 @@ export async function getNeedsYou(): Promise<NeedsYou> {
   const failures = configFailures(process.env);
   // Freshness counts only successful fetches.
   let updatedAt: string | null = null;
+  let hive: Hive | null = null;
   if (!failures.some((f) => f.source === RELAY)) {
     const result = await loadHive();
-    if (result.hive) updatedAt = result.fetchedAt;
-    else {
+    if (result.hive) {
+      updatedAt = result.fetchedAt;
+      hive = result.hive;
+    } else {
       failures.push({
         source: RELAY,
         detail: `${result.error}, so Agents and Timeline can't load.`,
@@ -215,23 +366,53 @@ export async function getNeedsYou(): Promise<NeedsYou> {
     }
   }
   const rows: NeedsYouRow[] = [];
-  const paused = pausedRow((await loadStatusFeed()).feed, Date.now() / 1000);
+  const headsUp: string[] = [];
+  const { feed } = await loadStatusFeed();
+  const paused = pausedRow(feed, Date.now() / 1000);
   if (paused) rows.push(paused);
   const excluded = excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS);
-  if (process.env.GITHUB_TOKEN && !excluded.has(MERGE_READY)) {
-    const result = await Promise.race([
-      loadGitHub(),
-      new Promise<null>((r) => setTimeout(r, GITHUB_WAIT_MS, null)),
-    ]);
-    if (result?.github) {
-      const merge = mergeRow(result.github);
-      if (merge) rows.push(merge);
-    } else if (result) {
-      failures.push({
-        source: "GitHub",
-        detail: `${result.error}, so merge-ready PRs can't load.`,
-      });
+  const reads = githubReads(excluded);
+  const token = Boolean(process.env.GITHUB_TOKEN);
+  // Both reads share one wait, so a cold start holds the page 2s, not 4s.
+  // Silence needs the claims too, so GitHub is read whenever the relay is.
+  const [gh, rel] = await Promise.all([
+    token && (reads.length || hive) ? briefly(loadGitHub()) : null,
+    token ? briefly(loadReleases()) : null,
+  ]);
+  if (gh?.github) {
+    const merge = reads.includes("merge") && mergeRow(gh.github);
+    if (merge) rows.push(merge);
+    const blocked = reads.includes("blocked") && blockedRow(gh.github);
+    if (blocked) rows.push(blocked);
+    if (hive) {
+      const now = Math.floor(Date.now() / 1000);
+      try {
+        const buckets = await recentBuckets(now, 24);
+        for (const q of quietAgents(hive, feed, gh.github, buckets)) {
+          if (now - q.since > HEADS_UP_QUIET_S) {
+            headsUp.push(quietLine(q, now));
+          }
+        }
+      } catch (err) {
+        console.error("Needs you, silence:", err);
+      }
     }
+  } else if (gh && reads.length) {
+    failures.push({
+      source: "GitHub",
+      detail: `${gh.error}, so ${reads.map((r) => GITHUB_READS[r]).join(" and ")} can't load.`,
+    });
+  }
+  if (rel?.releases) {
+    const release = releaseRow(rel.releases);
+    const ci = ciRow(rel.releases);
+    if (release) rows.push(release);
+    if (ci) rows.push(ci);
+  } else if (rel) {
+    failures.push({
+      source: "GitHub",
+      detail: `${rel.error}, so releases and CI on main can't load.`,
+    });
   }
   try {
     const health = await loadFailing(Math.floor(Date.now() / 1000));
@@ -241,16 +422,13 @@ export async function getNeedsYou(): Promise<NeedsYou> {
     // Like the cost chip: a database outage shows on Health, not every page.
     console.error("Needs you, Health:", err);
   }
-  // ponytail: only the usage pause, merge-ready and failing agents are read
-  // so far. The
-  // Pipeline PR adds ai-blocked issues and the Releases PR adds release
-  // approvals and red CI on main. Until then the card stays disconnected
-  // rather than a stubbed "All clear", but still lists the rows it can see.
+  // ponytail: the card stays disconnected rather than a stubbed "All clear",
+  // but still lists the rows it can see.
   return {
     connected: false,
     rows,
-    headsUp: [],
+    headsUp,
     failures,
     updatedAt,
   };
-}
+});

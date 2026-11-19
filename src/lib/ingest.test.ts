@@ -20,6 +20,7 @@ const item = (over: Partial<GitHubItem> = {}): GitHubItem => ({
   closedAt: null,
   mergedAt: null,
   reviews: [],
+  labelEvents: [],
   ...over,
 });
 
@@ -40,6 +41,7 @@ describe("githubRows", () => {
         { ...item(), claimedAt: 1_700_000_000 },
         { ...item({ number: 4, isPr: false, agent: null }), claimedAt: 1 },
       ],
+      releases: [],
       truncated: false,
     });
     expect(rows.map((r) => [r.sourceId, r.kind, r.actor])).toEqual([
@@ -55,6 +57,53 @@ describe("githubRows", () => {
       author: "acme-bot",
     });
     expect(rows[2].at).toEqual(new Date(1_700_000_500_000));
+  });
+});
+
+describe("githubRows, labels and releases (#54)", () => {
+  it("records each label change once and each published release", () => {
+    const labelEvents = [
+      {
+        label: "ai-ready",
+        action: "added" as const,
+        at: 10,
+        actor: "rtorcato",
+      },
+      { label: "ai-ready", action: "removed" as const, at: 20, actor: "bot" },
+    ];
+    const pr = item({ labelEvents });
+    const rows = githubRows({
+      // The same PR as a claim too: its label rows aren't doubled.
+      prs: [pr],
+      claims: [{ ...pr, claimedAt: 1 }],
+      releases: [
+        {
+          repo: "acme/app",
+          tag: "v1.2.0",
+          name: "v1.2.0",
+          url: "https://github.com/acme/app/releases/tag/v1.2.0",
+          publishedAt: 30,
+          author: "github-actions[bot]",
+          prerelease: false,
+        },
+      ],
+      truncated: false,
+    });
+    const extra = rows.filter((r) => r.kind !== "pr_opened");
+    expect(extra.map((r) => [r.sourceId, r.kind, r.actor])).toEqual([
+      ["acme/app#7:label:added:ai-ready:10", "labelled", "rtorcato"],
+      ["acme/app#7:label:removed:ai-ready:20", "labelled", "bot"],
+      ["acme/app@v1.2.0:released", "released", "github-actions[bot]"],
+    ]);
+    expect(extra[1].data).toEqual({
+      number: 7,
+      label: "ai-ready",
+      action: "removed",
+    });
+    expect(extra[2]).toMatchObject({
+      at: new Date(30_000),
+      data: { tag: "v1.2.0", prerelease: false },
+    });
   });
 });
 

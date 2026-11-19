@@ -13,6 +13,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   lt,
   max,
   min,
@@ -21,6 +22,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import type { LogRow, OpenRow } from "./cleared-log";
 import { FLOW_KINDS } from "./flow";
 import type { HealthBucket } from "./health";
 import {
@@ -30,6 +32,7 @@ import {
   type HistoryEvent,
   type NewAgentEvent,
   type NewCostPoint,
+  needsYouLog,
   settings,
 } from "./history-schema";
 
@@ -38,7 +41,7 @@ import {
 // connection. The history views (#41 to #47) read through listEvents and
 // historyStats.
 
-const schema = { events, costPoints, agentEvents, settings };
+const schema = { events, costPoints, agentEvents, needsYouLog, settings };
 type Db = DbHandle<typeof schema>["db"];
 
 /** True when DATABASE_URL is set, so the history views and nav show. */
@@ -72,6 +75,37 @@ export async function migrateHistory() {
   await migrate(historyDb(), {
     migrationsFolder: path.join(process.cwd(), "drizzle"),
   });
+  for (const statement of hiveStatements(process.env.BUZZ_RELAY_URL)) {
+    await historyDb().execute(sql.raw(statement));
+  }
+}
+
+const HIVE_TABLES = [
+  "events",
+  "cost_points",
+  "agent_events",
+  "needs_you_log",
+  "settings",
+];
+
+/**
+ * #116: the relay URL becomes each history table's `hive` default, and rows
+ * without one get it, so no insert has to name the hive. [] without a relay.
+ */
+export function hiveStatements(relayUrl: string | undefined): string[] {
+  let url: URL;
+  try {
+    url = new URL(relayUrl ?? "");
+  } catch {
+    return [];
+  }
+  if (url.protocol !== "wss:" && url.protocol !== "ws:") return [];
+  // ALTER ... SET DEFAULT takes no bind parameters, so quote it as a literal.
+  const hive = `'${url.href.replace(/'/g, "''")}'`;
+  return HIVE_TABLES.flatMap((t) => [
+    `ALTER TABLE "${t}" ALTER COLUMN "hive" SET DEFAULT ${hive}`,
+    `UPDATE "${t}" SET "hive" = ${hive} WHERE "hive" IS NULL`,
+  ]);
 }
 
 /** Deletes rows past the retention window; returns how many. */
@@ -81,6 +115,7 @@ export async function pruneHistory(now = new Date()) {
     historyDb().delete(events).where(lt(events.at, cutoff)),
     historyDb().delete(costPoints).where(lt(costPoints.at, cutoff)),
     historyDb().delete(agentEvents).where(lt(agentEvents.at, cutoff)),
+    historyDb().delete(needsYouLog).where(lt(needsYouLog.appearedAt, cutoff)),
   ]);
   return results.reduce((n, r) => n + (r.rowCount ?? 0), 0);
 }
@@ -250,8 +285,103 @@ export async function setSetting(key: string, value: unknown) {
     });
 }
 
+/**
+ * Reads, changes and writes one setting under a lock on its key, so two
+ * read-modify-writes can't lose each other's change (#90). Returns the new value.
+ */
+export async function updateSetting<T>(
+  key: string,
+  change: (value: unknown) => T,
+): Promise<T> {
+  return historyDb().transaction(async (tx) => {
+    // An advisory lock rather than FOR UPDATE: it also covers a key not stored yet.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
+    const [row] = await tx
+      .select({ value: settings.value })
+      .from(settings)
+      .where(eq(settings.key, key));
+    const value = change(row?.value ?? null);
+    await tx
+      .insert(settings)
+      .values({ key, value })
+      .onConflictDoUpdate({
+        target: settings.key,
+        set: { value, updatedAt: new Date() },
+      });
+    return value;
+  });
+}
+
 export async function deleteSetting(key: string) {
   await historyDb().delete(settings).where(eq(settings.key, key));
+}
+
+/** Needs you items that showed and haven't cleared yet (#88). */
+export async function openLogRows(): Promise<OpenRow[]> {
+  const rows = await historyDb()
+    .select()
+    .from(needsYouLog)
+    .where(isNull(needsYouLog.clearedAt));
+  return rows.map((r) => ({
+    key: r.key,
+    appearedAt: r.appearedAt.getTime(),
+    acked: r.acked,
+  }));
+}
+
+/** Starts a log row per item; one already open for the key is left alone. */
+export async function logAppeared(
+  items: { key: string; rule: string; title: string }[],
+  at: number,
+) {
+  if (!items.length) return;
+  await historyDb()
+    .insert(needsYouLog)
+    .values(items.map((i) => ({ ...i, appearedAt: new Date(at) })))
+    .onConflictDoNothing();
+}
+
+/** Marks the open rows for `keys` cleared. */
+export async function logCleared(keys: string[], at: number) {
+  if (!keys.length) return;
+  await historyDb()
+    .update(needsYouLog)
+    .set({ clearedAt: new Date(at) })
+    .where(and(inArray(needsYouLog.key, keys), isNull(needsYouLog.clearedAt)));
+}
+
+/** Marks the open rows for `keys` acked before they cleared. */
+export async function logAcked(keys: string[]) {
+  if (!keys.length) return;
+  await historyDb()
+    .update(needsYouLog)
+    .set({ acked: true })
+    .where(and(inArray(needsYouLog.key, keys), isNull(needsYouLog.clearedAt)));
+}
+
+/** Rows that cleared since `since`, newest first. */
+export async function clearedSince(since: Date): Promise<LogRow[]> {
+  const rows = await historyDb()
+    .select()
+    .from(needsYouLog)
+    .where(
+      and(isNotNull(needsYouLog.clearedAt), gte(needsYouLog.clearedAt, since)),
+    )
+    .orderBy(desc(needsYouLog.clearedAt));
+  return rows.flatMap((r) =>
+    r.clearedAt
+      ? [
+          {
+            key: r.key,
+            rule: r.rule,
+            title: r.title,
+            appearedAt: r.appearedAt.getTime(),
+            clearedAt: r.clearedAt.getTime(),
+            acked: r.acked,
+          },
+        ]
+      : [],
+  );
 }
 
 /** Stores cost points; a retried report inserts nothing new. */
@@ -308,6 +438,18 @@ export async function costSince(since: Date): Promise<number> {
     .from(costPoints)
     .where(and(gte(costPoints.at, since), eq(costPoints.metric, "cost")));
   return row?.value ?? 0;
+}
+
+/** Estimated dollars per agent since `since`, for the Agent over budget rule. */
+export function costByAgentSince(since: Date) {
+  return historyDb()
+    .select({
+      agent: costPoints.agent,
+      usd: sql<number>`coalesce(sum(${costPoints.value}), 0)`.mapWith(Number),
+    })
+    .from(costPoints)
+    .where(and(gte(costPoints.at, since), eq(costPoints.metric, "cost")))
+    .groupBy(costPoints.agent);
 }
 
 /** Each agent that reported since `since`: its last report and tokens since `today`. */

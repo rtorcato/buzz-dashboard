@@ -1,4 +1,5 @@
 import {
+  boolean,
   doublePrecision,
   index,
   integer,
@@ -8,6 +9,11 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+
+// The relay a row came from (#116), for multi-hive (#74) later. Not in any key
+// yet. migrateHistory makes BUZZ_RELAY_URL the default and fills old rows, so
+// no insert has to set it.
+const hive = () => text("hive");
 
 // The history store (#39). One append-only table of events from the sources
 // the dashboard already reads. `pnpm db:generate` turns a change here into a
@@ -38,6 +44,7 @@ export const events = pgTable(
     ingestedAt: timestamp("ingested_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    hive: hive(),
   },
   // The primary key makes ingest idempotent: a re-read inserts nothing new.
   (t) => [
@@ -72,6 +79,7 @@ export const costPoints = pgTable(
     value: doublePrecision("value").notNull(),
     /** The turn's Buzz channel id; only the owner signer's reports (#43) have one. */
     channel: text("channel"),
+    hive: hive(),
   },
   (t) => [
     primaryKey({
@@ -100,6 +108,7 @@ export const agentEvents = pgTable(
     reason: text("reason"),
     /** An OTel api_error's HTTP status code. */
     status: integer("status"),
+    hive: hive(),
   },
   (t) => [index("agent_events_at_idx").on(t.at)],
 );
@@ -113,4 +122,29 @@ export const settings = pgTable("settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+  hive: hive(),
 });
+
+// Needs you cleared-items log (#88): when each alert item appeared and when it
+// cleared, written by the alerts pass. Feeds the card footer's weekly stats
+// and the History table. An item that comes back gets a new row.
+export const needsYouLog = pgTable(
+  "needs_you_log",
+  {
+    /** The alert item key, e.g. "failing:Gale" or "merge:repo#12". */
+    key: text("key").notNull(),
+    /** The alert rule: "failing" or "merge" so far. */
+    rule: text("rule").notNull(),
+    title: text("title").notNull(),
+    appearedAt: timestamp("appeared_at", { withTimezone: true }).notNull(),
+    /** Null while the item is still showing. */
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
+    /** The owner acked it (snooze until it changes) before it cleared. */
+    acked: boolean("acked").notNull().default(false),
+    hive: hive(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.appearedAt] }),
+    index("needs_you_log_cleared_idx").on(t.clearedAt),
+  ],
+);

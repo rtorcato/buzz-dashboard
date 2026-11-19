@@ -29,6 +29,7 @@ Without `BUZZ_RELAY_URL` and `BUZZ_PRIVATE_KEY` the relay-backed views show a "C
 | `AUTH_PROXY_HEADER` | Proxy mode: the request header your proxy names the user in, e.g. `X-authentik-username`. |
 | `AUTH_PROXY_SECRET` | Proxy mode: a shared secret the proxy sends as `X-Buzz-Proxy-Secret`. The user header only counts with it. |
 | `AUTH_PROXY_USERS` | Proxy mode: comma list of users who are the owner. Unset, anyone the proxy lets through is. |
+| `REQUIRE_SIGN_IN_FOR_READS` | `1` puts every page and API read behind owner sign-in, not just writes. Signed out, pages go to `/sign-in` and the API answers 401; `/api/health` and OTLP ingest stay open. Off by default. With it on and `AUTH_MODE` unset, nobody gets in. |
 
 In `nostr` mode the keys allowed to sign in are `BUZZ_OWNER_PUBKEY`, which may be a comma list. See [Owner sign-in](./owner-sign-in.md).
 
@@ -53,6 +54,15 @@ See [Optional views](./optional-views.md#github) for the permissions the token n
 | `R2_SECRET_ACCESS_KEY` | The matching secret. |
 
 All five must be set together. If any is missing the Media tab shows a "Can't reach" alert, and the status feed is treated as not reported. See [Optional views](./optional-views.md#media-and-the-status-feed).
+
+## History store (optional)
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres URL of the history store, e.g. `postgres://hive:hive@127.0.0.1:5432/hive`. Unset keeps the live-only dashboard, with Health, Cost, Pipeline Flow and Alerts hidden. |
+| `HISTORY_RETENTION_DAYS` | Days of history to keep. Defaults to 90. |
+
+See [Optional views](./optional-views.md#history-store).
 
 ## Display (optional)
 

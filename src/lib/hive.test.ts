@@ -210,6 +210,31 @@ describe("buildHive", () => {
     expect(woz?.workingOn).toBe("PR up: #1");
     expect(feed.find((f) => f.text === "I'm Woz now")?.isAgent).toBe(false);
   });
+
+  it("lists silent attested agents and drops archived ones (NIP-IA)", () => {
+    const archive = (t: number, pubkeys: string[]) =>
+      ev(13535, "relay", t, "", [["-"], ...pubkeys.map((p) => ["p", p])]);
+    const { agents, feed } = buildHive(
+      [
+        ...events,
+        profile("hound", "Hound", "Researcher"),
+        profile("old-hound", "Hound (old)"),
+        msg("old-hound", at(7, 11), "still posting"),
+        // Only the newest snapshot counts.
+        archive(at(1, 0), ["hound"]),
+        archive(at(2, 0), ["old-hound", "bumble-old"]),
+      ],
+      now,
+      owner,
+    );
+    const byName = Object.fromEntries(agents.map((a) => [a.name, a]));
+    expect(byName.Hound).toMatchObject({ lastSeenAt: null, workingOn: null });
+    expect(byName["Hound (old)"]).toBeUndefined();
+    // An archived copy no longer folds into the current agent.
+    expect(byName.Bumble.pubkeys).toEqual(["bumble"]);
+    // History stays.
+    expect(feed.some((f) => f.text === "still posting")).toBe(true);
+  });
 });
 
 describe("isAttested", () => {
@@ -315,5 +340,44 @@ describe("getHive", () => {
     // Every message counts once, the boundary one included.
     expect(woz.messages).toHaveLength(1200);
     expect(woz.daily).toEqual([0, 200, 0, 1, 0, 0, 999]);
+  });
+
+  it("pages profiles past the cap, counting events the relay dropped", async () => {
+    queryRelay.mockReset();
+    // Only the profiles the test inspects carry an attestation. Signing and
+    // verifying ~1000 of them took seconds and timed this test out on CI.
+    const prof = (pk: string, created_at: number, attested = true) => ({
+      ...(attested
+        ? profile(pk, pk)
+        : ev(0, pk, created_at, JSON.stringify({ display_name: pk }))),
+      id: pk,
+      created_at,
+    });
+    // A full page of 1000 where one forged event was dropped: 999 survive.
+    const page1 = Object.assign(
+      Array.from({ length: 999 }, (_, i) =>
+        i === 998 ? prof(`p${i}`, at(3, 10)) : prof(`p${i}`, at(7, 9), false),
+      ),
+      { received: 1000 },
+    );
+    const page2 = [prof("p998", at(3, 10)), prof("late", at(1, 9))];
+    queryRelay.mockImplementation(
+      async (_env, [filter]: { kinds: number[]; until?: number }[]) => {
+        if (!filter.kinds.includes(0)) return [];
+        return filter.until === undefined ? page1 : page2;
+      },
+    );
+
+    const hive = await getHive(now);
+    // The profile only the second page carried still makes the roster.
+    expect(hive.agents.map((a) => a.name)).toContain("late");
+    const profileQueries = queryRelay.mock.calls
+      .map(([, [filter]]) => filter)
+      .filter((f) => f.kinds.includes(0));
+    expect(profileQueries.map((f) => f.until)).toEqual([undefined, at(3, 10)]);
+    const channelQueries = queryRelay.mock.calls.filter(([, [f]]) =>
+      f.kinds.includes(39000),
+    );
+    expect(channelQueries).toHaveLength(1);
   });
 });

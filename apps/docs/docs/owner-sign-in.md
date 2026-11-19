@@ -5,7 +5,7 @@ sidebar_position: 6
 
 # Owner sign-in
 
-The views are read-only and stay open to anyone who can reach the dashboard, so keep it behind your own access layer (see [Security](./security.md)). Sign-in only matters for the dashboard's own state, and only the owner can change that: snoozing and acknowledging Needs-you items, alert channels and rules, custom Pipeline stages, and the cost source. Signed out, the same controls are shown read-only.
+The views are read-only and stay open to anyone who can reach the dashboard, so keep it behind your own access layer (see [Security](./security.md)). Sign-in only matters for the dashboard's own state, and only the owner can change that: snoozing and acknowledging Needs-you items, alert channels and rules, and the cost source. Signed out, the same controls are shown read-only.
 
 There are no passwords and no stored keys. A signed-in owner gets a session cookie that is `httpOnly`, `SameSite=Lax`, `Secure` over HTTPS, signed by the server and valid for 7 days.
 
@@ -49,3 +49,13 @@ labels:
 ```
 
 Leave `AUTH_PROXY_USERS` unset and every user the proxy lets through is the owner.
+
+## Require sign-in for reads
+
+By default only writes need sign-in, and anyone who can reach the dashboard can read it. Once it is reachable from outside your network, set:
+
+```bash
+REQUIRE_SIGN_IN_FOR_READS=1
+```
+
+Every page and API read then needs the owner. Signed out, pages go to `/sign-in` and the API answers 401. `/api/health` and OTLP ingest stay open, since ingest has its own token. With the flag on and `AUTH_MODE` unset, nobody gets in.

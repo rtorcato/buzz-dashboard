@@ -136,6 +136,13 @@ export const sampleMergeRow = (): NeedsYouRow => ({
   detail: "example-app#44, example-lib#119, example-docs#31",
   count: 3,
   since: new Date((nowS() - 2 * 3600) * 1000).toISOString(),
+  // Same shape as mergeKey() in needs-you.ts (a server-only module, so not
+  // imported here), so the snooze menu shows in the sample.
+  keys: [
+    "merge:example/example-app#44",
+    "merge:example/example-lib#119",
+    "merge:example/example-docs#31",
+  ],
 });
 
 // The capture script answers requests to this host with its own screenshots.

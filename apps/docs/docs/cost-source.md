@@ -9,7 +9,7 @@ The Cost view shows what your agents spend per day, split by agent and model: es
 
 Every dollar figure is **estimated, at API list price**. That's the price the API would charge for the same tokens, not what a subscription plan bills. Token counts are exact.
 
-Cost needs the [history store](./optional-views.md), because the reports are kept in Postgres. Without `DATABASE_URL` there is no Cost view and no cost source.
+Cost needs the [history store](./optional-views.md#history-store), because the reports are kept in Postgres. Without `DATABASE_URL` there is no Cost view and no cost source.
 
 ## OpenTelemetry
 

@@ -90,6 +90,8 @@ let lastRaw: string | null | undefined;
 let cached = DEFAULTS;
 
 function read(): string | null {
+  // Blocked storage reads as null, same as a missing key. Keep the in-memory value instead.
+  if (!isLocalStorageAvailable()) return lastRaw ?? null;
   // The library parses the stored JSON; serialise it again so parseSettings gets the raw text.
   const stored = getLocalStorage(SETTINGS_KEY);
   return stored === null ? null : JSON.stringify(stored);

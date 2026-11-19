@@ -18,10 +18,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { LocalTime } from "@/components/local-time";
+import { NeedsYouHistory } from "@/components/needs-you-history";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Card } from "@/components/ui/card";
 import { formatAge } from "@/lib/age";
 import { type Mutes, rowMute } from "@/lib/alerts";
+import type { LogRow } from "@/lib/cleared-log";
 import {
   KIND_VIEW,
   type NeedsYou,
@@ -64,9 +66,12 @@ export function NeedsYouCard({
   data,
   now,
   snooze,
+  cleared,
 }: {
   data: NeedsYou;
   now: number;
+  /** The cleared-items log (#88), with the history store only. */
+  cleared: LogRow[] | null;
   /**
    * Snooze and ack (#46), with the history store only. `canEdit` is the
    * signed-in owner; `signIn` says sign-in is on, so the hint can show.
@@ -87,24 +92,28 @@ export function NeedsYouCard({
             can&apos;t say whether anything needs you.
           </p>
         </div>
+        <HeadsUp lines={data.headsUp} />
       </Card>
     );
   }
 
   if (data.rows.length === 0) {
     return (
-      <Card className="flex-row items-center gap-3 px-4 py-4 sm:px-6">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success/10 text-success">
-          <Check className="size-5" aria-hidden />
-        </span>
-        <div>
-          <h2 className="font-semibold">All clear. Nothing needs you.</h2>
-          <p className="text-sm text-muted-foreground">
-            No releases waiting, main is green on every repo, nothing is
-            blocked.
-          </p>
+      <Card className="gap-0 py-0">
+        <div className="flex items-center gap-3 px-4 py-4 sm:px-6">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success/10 text-success">
+            <Check className="size-5" aria-hidden />
+          </span>
+          <div>
+            <h2 className="font-semibold">All clear. Nothing needs you.</h2>
+            <p className="text-sm text-muted-foreground">
+              No releases waiting, main is green on every repo, nothing is
+              blocked.
+            </p>
+          </div>
+          <HeadsUp lines={data.headsUp} />
         </div>
-        <HeadsUp lines={data.headsUp} />
+        {cleared && <NeedsYouHistory rows={cleared} now={now} />}
       </Card>
     );
   }
@@ -221,6 +230,7 @@ export function NeedsYouCard({
         </p>
       )}
       <HeadsUp lines={data.headsUp} footer />
+      {cleared && <NeedsYouHistory rows={cleared} now={now} />}
     </Card>
   );
 }

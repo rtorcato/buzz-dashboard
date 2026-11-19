@@ -2,6 +2,7 @@ import "server-only";
 
 import { checkEnv } from "@rtorcato/js-common/env";
 import { z } from "zod";
+import { mergeConfig, readSavedConfig } from "./config-store";
 
 // Credentials are read on the server only. The `server-only` import makes the
 // build fail if a client component ever pulls this module in.
@@ -29,10 +30,15 @@ const EnvSchema = z.object({
     .transform((v) => v || undefined),
   BUZZ_RELAY_URL: z.string().min(1),
   BUZZ_PRIVATE_KEY: z.string().min(1),
+  // Checked here so a bad tag fails at startup, not on the first query.
   BUZZ_AUTH_TAG: z
     .string()
     .optional()
-    .transform((v) => v || undefined),
+    .transform((v) => v || undefined)
+    .refine((v) => v === undefined || isAuthTag(v), {
+      message:
+        'must be a JSON tag like ["auth","<owner hex>","<conditions>","<sig>"]',
+    }),
   BUZZ_OWNER_PUBKEY: z
     .string()
     .optional()
@@ -41,8 +47,9 @@ const EnvSchema = z.object({
 
 export function readServerEnv(
   source: Record<string, string | undefined> = process.env,
+  saved = readSavedConfig(),
 ): ServerEnv {
-  const env = checkEnv(EnvSchema, source);
+  const env = checkEnv(EnvSchema, mergeConfig(source, saved));
   const owners = (env.BUZZ_OWNER_PUBKEY || tagOwner(env.BUZZ_AUTH_TAG) || "")
     .split(/[\s,]+/)
     .filter(Boolean)
@@ -55,6 +62,20 @@ export function readServerEnv(
     buzzOwnerPubkey: owners[0],
     buzzOwnerPubkeys: owners,
   };
+}
+
+function isAuthTag(raw: string): boolean {
+  try {
+    const tag: unknown = JSON.parse(raw);
+    return (
+      Array.isArray(tag) &&
+      tag[0] === "auth" &&
+      tag.length === 4 &&
+      tag.every((t) => typeof t === "string")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function tagOwner(authTag?: string): string | undefined {

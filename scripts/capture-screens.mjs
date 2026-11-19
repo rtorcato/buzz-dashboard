@@ -45,6 +45,13 @@ const stop = () => {
   } catch {}
 };
 process.on("exit", stop);
+// A signal kills Node without emitting "exit", so stop the server on these too.
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    stop();
+    process.exit(1);
+  });
+}
 
 async function waitForServer() {
   for (let i = 0; i < 120; i++) {

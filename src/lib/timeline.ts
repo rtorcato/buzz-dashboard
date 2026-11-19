@@ -11,8 +11,6 @@ export const TYPES = {
     label: "PRs",
     kinds: ["pr_opened", "pr_reviewed", "pr_merged", "pr_closed"],
   },
-  // ponytail: the ingester doesn't record label changes or releases yet, so
-  // these filters stay empty until it does.
   labels: { label: "Labels", kinds: ["labelled"] },
   releases: { label: "Releases", kinds: ["released"] },
 } as const;
@@ -78,6 +76,8 @@ export type Row = {
   snippet: string;
   chips: string[];
   url: string | null;
+  /** "owner/repo#N" for a GitHub PR or issue, to match it to Needs you items. */
+  ref?: string;
 };
 
 /** Names for raw actors: hex pubkeys to agent names, channel ids to names. */
@@ -116,6 +116,17 @@ const GITHUB: Record<string, [RowIcon, string]> = {
   claimed: ["claimed", "claimed"],
 };
 
+// "added ai-ready to" / "removed ai-wip from" for a label row (#54).
+function githubVerb(e: HistoryEvent): string {
+  const label = e.data?.label;
+  if (e.kind === "labelled" && typeof label === "string") {
+    return e.data?.action === "removed"
+      ? `removed ${label} from`
+      : `added ${label} to`;
+  }
+  return e.kind.replace(/_/g, " ");
+}
+
 export function toRow(e: HistoryEvent, names: Names, q = ""): Row {
   const at = Math.floor(e.at.getTime() / 1000);
   const id = `${e.source}:${e.sourceId}`;
@@ -134,10 +145,25 @@ export function toRow(e: HistoryEvent, names: Names, q = ""): Row {
       url: e.url,
     };
   }
-  const [icon, verb] = GITHUB[e.kind] ?? ["other", e.kind.replace(/_/g, " ")];
+  const [icon, verb] = GITHUB[e.kind] ?? ["other", githubVerb(e)];
   const number = e.data?.number;
   // The mockups name a repo without its owner: "example-app#42".
   const name = e.repo?.split("/").pop();
+  if (e.kind === "released") {
+    const tag = typeof e.data?.tag === "string" ? e.data.tag : null;
+    return {
+      id,
+      at,
+      source: "github",
+      icon,
+      actor: e.actor ? names.actor(e.actor) : "Someone",
+      verb,
+      target: name && tag ? `${name} ${tag}` : (name ?? null),
+      snippet: snippet(e.title ?? "", q),
+      chips: name ? [name] : [],
+      url: e.url,
+    };
+  }
   return {
     id,
     at,
@@ -149,6 +175,8 @@ export function toRow(e: HistoryEvent, names: Names, q = ""): Row {
     snippet: snippet(e.title ?? e.body ?? "", q),
     chips: name ? [name] : [],
     url: e.url,
+    ref:
+      e.repo && typeof number === "number" ? `${e.repo}#${number}` : undefined,
   };
 }
 
@@ -185,6 +213,7 @@ export function liveEvents(
     body: null,
     data: null,
     ingestedAt: new Date(0),
+    hive: null,
   };
   return [
     ...github.map((e) => ({ ...blank, ...e })),

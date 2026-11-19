@@ -177,40 +177,46 @@ export function AgentsView({
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Agents</h2>
-        <div className="flex gap-2">
-          <fieldset className="inline-flex h-9 rounded-md border shadow-xs">
-            <legend className="sr-only">Filter agents</legend>
-            {FILTERS.map((f, i) => (
-              <button
-                key={f}
-                type="button"
-                aria-pressed={filter === f}
-                onClick={() => setFilter(f)}
-                className={`flex min-w-9 items-center px-3 text-sm focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${i ? "border-l" : ""} ${filter === f ? "bg-accent font-medium" : "text-muted-foreground hover:bg-muted"}`}
-              >
-                {capitalize(f)}
-              </button>
-            ))}
-          </fieldset>
-          <Select
-            items={sortItems}
-            value={sort}
-            onValueChange={(v) => v && setSort(v as Sort)}
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="mr-auto text-lg font-semibold">Agents</h2>
+        {/* Phones: Agents · Sort on row 1, the filter full-width on row 2. */}
+        <fieldset className="order-last box-content inline-flex h-11 w-full basis-full rounded-md border shadow-xs sm:order-none sm:box-border sm:h-9 sm:w-auto sm:basis-auto">
+          <legend className="sr-only">Filter agents</legend>
+          {FILTERS.map((f, i) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+              className={`flex min-w-9 flex-1 items-center justify-center px-2 text-sm sm:flex-none sm:px-3 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${i ? "border-l" : ""} ${filter === f ? "bg-accent font-medium" : "text-muted-foreground hover:bg-muted"}`}
+            >
+              {capitalize(f)}
+            </button>
+          ))}
+        </fieldset>
+        <Select
+          items={sortItems}
+          value={sort}
+          onValueChange={(v) => v && setSort(v as Sort)}
+        >
+          <SelectTrigger
+            className="h-11! min-w-44 sm:h-9!"
+            aria-label="Sort agents"
           >
-            <SelectTrigger className="h-9! min-w-44" aria-label="Sort agents">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {sortItems.map((i) => (
-                <SelectItem key={i.value} value={i.value}>
-                  {i.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {sortItems.map((i) => (
+              <SelectItem
+                key={i.value}
+                value={i.value}
+                className="min-h-11 sm:min-h-0"
+              >
+                {i.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {shown.length === 0 ? (
@@ -220,7 +226,7 @@ export function AgentsView({
             : `No ${filter} agents right now.`}
         </p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((a) => (
             <AgentCard
               key={a.name}
@@ -286,7 +292,7 @@ function AgentCard({
   return (
     <Link
       href={`/agents/${agentSlug(a.name)}`}
-      className="group rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="group min-w-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <Card
         className={`h-full gap-0 p-5 transition duration-150 group-hover:-translate-y-0.5 group-hover:border-foreground/20 motion-reduce:transform-none ${quiet ? "ring-1 ring-warning/40" : ""} ${status === "stopped" ? "opacity-80" : ""}`}
@@ -379,8 +385,8 @@ export function RuntimeRow({
     );
   }
   const running = r.state === "running";
-  // ponytail: the feed's last_turn is always null today (Desktop logs no
-  // per-turn line), so fall back to the relay's last message time.
+  // Desktop-log runtimes have no last_turn, so fall back to the relay's last
+  // message time. Goose runtimes report it.
   const turn = r.lastTurn ?? lastSeenAt;
   return (
     <div className="mt-4 flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs">
@@ -394,14 +400,20 @@ export function RuntimeRow({
             running ? "font-medium text-success" : "text-muted-foreground"
           }
         >
-          {running ? "Running" : "Stopped"}
-        </span>
-        <span className="text-muted-foreground tabular-nums">
-          {" · "}
           {running
-            ? `up ${formatAge((now - r.since) * 1000)}`
-            : ago(now - r.since)}
+            ? "Running"
+            : r.state === "stopped"
+              ? "Stopped"
+              : "State not reported"}
         </span>
+        {r.state !== "unknown" && (
+          <span className="text-muted-foreground tabular-nums">
+            {" · "}
+            {running
+              ? `up ${formatAge((now - r.since) * 1000)}`
+              : ago(now - r.since)}
+          </span>
+        )}
         {feed?.stale && (
           <span className="text-warning tabular-nums">
             {" · as of "}
@@ -443,7 +455,7 @@ export function Avatar({
   /** Size and initials text size. */
   className?: string;
 }) {
-  // Relay-hosted pictures need auth, so fall back to initials when one fails.
+  // Relay pictures come through /api/avatar (#112); initials when one fails.
   const [failed, setFailed] = useState(false);
   if (a.picture && !failed) {
     return (

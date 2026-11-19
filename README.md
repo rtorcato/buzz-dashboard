@@ -8,11 +8,13 @@
 # buzz-dashboard
 
 [<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="40">](https://buymeacoffee.com/rtorcato)
+[<img src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=githubsponsors&style=for-the-badge" alt="Sponsor on GitHub" height="40">](https://github.com/sponsors/rtorcato)
 
 A self-hosted, read-only dashboard for a [Buzz](https://buzz.xyz) hive. It shows
-what your agents are doing and which issues, pull requests and releases are
-waiting on you. It never posts, labels, merges or releases. Every action in the
-UI is a link out to GitHub.
+what your agents are doing and which pull requests are waiting on you. It never
+posts to your relay, and never labels, merges or releases anything on GitHub.
+Every action on your work is a link out to GitHub. The only things it changes
+are its own settings, behind [owner sign-in](#owner-sign-in).
 
 [Buzz](https://buzz.xyz) is a messaging app where people and AI agents work
 together in channels. It runs on a Nostr relay, and each agent has its own
@@ -27,12 +29,20 @@ now?" without scrolling every channel.
 
 | View | Status | Shows |
 |---|---|---|
-| **Needs you** card | Live | Releases waiting for approval, red CI on `main`, blocked issues, stopped agents that still hold claims, a paused hive and `merge-ready` pull requests. Collapses to "All clear" when there's nothing to do. Sits on top of every view. |
+| **Needs you** card | Live | A paused hive, `merge-ready` pull requests and failing agents. Sits on top of every view. Blocked issues, release approvals and red CI on `main` aren't read yet, so the card never says "All clear". With the history store, the signed-in owner can snooze or acknowledge a row. |
 | **Agents** | Live | One card per agent: status, last seen, home channel, messages today and a 7-day sparkline. Each card opens an agent page. The page's open claims and recent pull requests aren't read yet. |
+| **Health** | Live, history | Error rates per agent from the [cost source](https://docs.torcato.dev/buzz-dashboard/docs/cost-source), an hourly chart for each, and which agents are failing (over 25% errors for 15 minutes). |
+| **Pipeline** | Partly built | The **Flow** tab (history): median cycle time, change requests, stalled pull requests and time spent in each step, by repo and by agent, over 7, 30 or 90 days. The **Now** tab (label counts) is a placeholder. |
+| **Timeline** | Live | Today's GitHub and Buzz events, grouped by hour. With the history store it adds search across messages, issues, pull requests and labels, filters by repo, agent, source and type, and ranges up to 90 days. |
+| **Cost** | Live, history | Estimated spend per day by agent and model, tokens, cache hit rate and top agents, from OpenTelemetry or the owner's signer. Cost per channel with the signer. |
 | **Media** | Live | Screenshots and mockups from an R2 bucket, grouped by repo and date. |
-| **Pipeline** | Placeholder | Not built yet. |
+| **Settings** | Live | **General**: browser preferences such as theme, density, start view and pinned agents. **Alerts** (history): send Needs-you rows to ntfy, Slack or a webhook. **Sources**: what each source reports, and where the owner connects the cost source. |
 | **Releases** | Placeholder | Not built yet. |
-| **Timeline** | Placeholder | Not built yet. |
+
+*History* means the view needs the optional Postgres
+[history store](#6-a-postgres-database-optional) (`DATABASE_URL`). Without it,
+Health and Cost leave the sidebar, Pipeline shows only Now, and Alerts and
+snoozing are off.
 
 ## Quick start
 
@@ -65,7 +75,8 @@ point it at an env file.
    curl -s http://localhost:3000/api/health   # {"ok":true}
    ```
 
-The port is bound to `127.0.0.1` on purpose. The dashboard has no login, so read
+The port is bound to `127.0.0.1` on purpose. Reading needs no login (owner
+sign-in only guards the dashboard's own settings), so read
 [Self-host](#self-host) before you expose it.
 
 ### Or with Compose
@@ -92,7 +103,7 @@ docker compose up -d
 ### Image tags
 
 The `Publish image` workflow pushes `ghcr.io/rtorcato/buzz-dashboard` for
-`linux/amd64`:
+`linux/amd64` and `linux/arm64` (Apple Silicon, Raspberry Pi 4/5):
 
 | Tag | When |
 |---|---|
@@ -149,12 +160,14 @@ two is enough.
 
 ### 4. A GitHub token (optional)
 
-Feeds the GitHub rows of Needs you. Create a **fine-grained personal access
-token**:
+Feeds the GitHub rows of Needs you and the Releases view. Create a
+**fine-grained personal access token**:
 
 - Repository access: only the repositories you want shown.
-- Repository permissions: **Metadata**, **Issues**, **Pull requests**,
-  **Actions** and **Deployments**, all *Read*. Nothing else.
+- Repository permissions: **Metadata**, **Contents**, **Issues**, **Pull
+  requests**, **Actions** and **Deployments**, all *Read*. Nothing else.
+  Releases needs Contents for tags, commits and `package.json`, and Actions
+  for release runs waiting on an approval.
 
 Then set `GITHUB_OWNERS` to the users or orgs that own those repositories, and
 `GITHUB_TRUSTED_AUTHORS` to the logins your agents post as (see
@@ -167,6 +180,15 @@ R2 API token with **Object Read** only, scoped to that one bucket, and set all
 five `MEDIA_BASE_URL` and `R2_*` variables. Media keys are expected as
 `<repo>/<YYYY-MM-DD>/<file>`.
 
+### 6. A Postgres database (optional)
+
+Feeds the history store behind Health, Cost, Pipeline Flow, Timeline search,
+Alerts and snoozing. Set `DATABASE_URL` to an empty Postgres database the
+dashboard can own. On start it applies its migrations, then stores GitHub and
+Buzz events every minute and drops those older than `HISTORY_RETENTION_DAYS`
+(90 by default). Cost also needs a cost source, connected in Settings → Sources
+(see [Cost source](https://docs.torcato.dev/buzz-dashboard/docs/cost-source)).
+
 ## Configuration
 
 All configuration is environment-only and read on the server. Tokens never
@@ -178,10 +200,12 @@ reach the browser, and an empty value counts as unset. See
 | `BUZZ_RELAY_URL` | Yes | WebSocket URL of your Buzz relay, e.g. `wss://relay.example.com` |
 | `BUZZ_PRIVATE_KEY` | Yes | 64-char hex private key of the dashboard's dedicated identity |
 | `BUZZ_OWNER_PUBKEY` | This or `BUZZ_AUTH_TAG` | Hex pubkey of your agents' owner. Defaults to the owner in `BUZZ_AUTH_TAG`, and wins when both are set |
+| `BUZZ_DM_PRIVATE_KEY` | No | 64-char hex key the opt-in Buzz DM alert channel posts with. Unset, it uses `BUZZ_PRIVATE_KEY`. Never an owner key: that is refused. See Settings → Alerts |
 | `BUZZ_AUTH_TAG` | If the identity isn't a relay member | NIP-OA owner attestation JSON |
 | `AUTH_MODE` | No | Owner sign-in for the dashboard's own writes: `nostr` (NIP-07 extension, allowed keys are `BUZZ_OWNER_PUBKEY`, which may be a comma list) or `proxy`. Unset, sign-in is off and nothing can write. See [Owner sign-in](https://docs.torcato.dev/buzz-dashboard/docs/owner-sign-in) |
 | `AUTH_PUBLIC_URL` | With `AUTH_MODE=nostr` | The URL you open the dashboard at, e.g. `https://hive.example.com`. Sign-in events must be signed for it. Without it Nostr sign-in stays off |
 | `AUTH_PROXY_HEADER`, `AUTH_PROXY_SECRET` | With `AUTH_MODE=proxy` | The header your proxy names the user in, and the secret it sends as `X-Buzz-Proxy-Secret`. The user header only counts with that secret |
+| `REQUIRE_SIGN_IN_FOR_READS` | No | `1` puts every page and API read behind owner sign-in, not just writes. Off by default; fails closed without `AUTH_MODE` |
 | `AUTH_PROXY_USERS` | No | Comma list of proxy users who are the owner. Unset, anyone the proxy lets through is |
 | `GITHUB_TOKEN` | No | Fine-grained, read-only GitHub token. Without it the GitHub-backed views show "Can't reach GitHub" |
 | `GITHUB_OWNERS` | With `GITHUB_TOKEN` | Comma list of GitHub users or orgs to read, e.g. `octo-org,octo-labs`. No default |
@@ -200,7 +224,7 @@ Media shows an alert and the status feed counts as not reported.
 
 ## Self-host
 
-The dashboard has no login. Anyone who can reach the port sees your agents'
+Reading needs no login. Anyone who can reach the port sees your agents'
 messages and your pull requests. Put an access layer in front before you route
 a hostname to it. [SECURITY.md](SECURITY.md) has the full checklist.
 
@@ -239,7 +263,7 @@ services:
       - traefik.http.routers.buzz-dashboard.rule=Host(`dashboard.example.com`)
       - traefik.http.routers.buzz-dashboard.entrypoints=websecure
       - traefik.http.routers.buzz-dashboard.tls=true
-      # The dashboard has no login. Attach your auth middleware here.
+      # The views have no login. Attach your auth middleware here.
       - traefik.http.routers.buzz-dashboard.middlewares=<your-auth>@file
       - traefik.http.services.buzz-dashboard.loadbalancer.server.port=3000
 
@@ -250,6 +274,28 @@ networks:
 
 The container listens on port 3000, terminates no TLS, and runs as the non-root
 `node` user.
+
+### Owner sign-in
+
+Sign-in is separate from your access layer. It guards only the dashboard's own
+writes: snoozing and acknowledging Needs-you rows, alert channels and rules,
+and the cost source. Set `AUTH_MODE` to turn it on:
+
+- **`nostr`**: you sign a one-time challenge with a NIP-07 browser extension.
+  The allowed keys are `BUZZ_OWNER_PUBKEY`, and `AUTH_PUBLIC_URL` must be the
+  URL you open the dashboard at.
+- **`proxy`**: a reverse proxy that already signs you in (Authentik forward
+  auth, for example) names the user in `AUTH_PROXY_HEADER` and sends
+  `AUTH_PROXY_SECRET` as `X-Buzz-Proxy-Secret`. `AUTH_PROXY_USERS` limits who
+  counts as the owner.
+
+Set `REQUIRE_SIGN_IN_FOR_READS=1` to put every page and API read behind the
+same sign-in, for a dashboard reachable from outside your network. Signed out,
+pages go to `/sign-in` and the API answers 401; `/api/health` and OTLP ingest
+stay open. It fails closed: with the flag on and `AUTH_MODE` unset, nobody gets in.
+
+Unset, sign-in is off and those controls stay read-only. See
+[Owner sign-in](https://docs.torcato.dev/buzz-dashboard/docs/owner-sign-in).
 
 ## Built for repo-ai's ai-loop
 

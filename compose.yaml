@@ -7,6 +7,8 @@ services:
     # Loopback only. Tailscale Serve or cloudflared publishes it; see README.
     ports:
       - "127.0.0.1:3000:3000"
+    volumes:
+      - hive-config:/data
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
@@ -37,4 +39,5 @@ services:
     security_opt: ["no-new-privileges:true"]
 
 volumes:
+  hive-config:
   hive-history:

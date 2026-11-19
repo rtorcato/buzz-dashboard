@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { signAuthEvent } = await import("./relay");
+const { queryRelay, signAuthEvent, signEvent, verifyEvent } = await import(
+  "./relay"
+);
 
 const env = {
   buzzRelayUrl: "wss://relay.example",
@@ -40,5 +42,49 @@ describe("signAuthEvent", () => {
     expect(() =>
       signAuthEvent({ ...env, buzzPrivateKey: "nsec1abc" }, "abc"),
     ).toThrow("64-character hex");
+  });
+});
+
+describe("verifyEvent", () => {
+  const good = signEvent("22".repeat(32), 0, [], '{"name":"Woz"}', 1000);
+
+  it("accepts a correctly signed event", () => {
+    expect(verifyEvent(good)).toBe(true);
+  });
+
+  it("rejects edited content, a forged pubkey, a bad sig or junk", () => {
+    expect(verifyEvent({ ...good, content: '{"name":"Evil"}' })).toBe(false);
+    expect(verifyEvent({ ...good, pubkey: "33".repeat(32) })).toBe(false);
+    expect(verifyEvent({ ...good, sig: "00".repeat(64) })).toBe(false);
+    expect(verifyEvent({ ...good, sig: "zz" })).toBe(false);
+  });
+});
+
+describe("queryRelay", () => {
+  it("drops events that fail verification and counts what arrived", async () => {
+    const good = signEvent("22".repeat(32), 0, [], "{}", 1000);
+    const forged = { ...good, id: "ff".repeat(32), content: '{"name":"x"}' };
+    class FakeSocket {
+      onmessage?: (m: { data: string }) => void;
+      onerror?: () => void;
+      onclose?: () => void;
+      constructor() {
+        queueMicrotask(() => this.emit(["OK", "id", true]));
+      }
+      emit(msg: unknown[]) {
+        this.onmessage?.({ data: JSON.stringify(msg) });
+      }
+      send() {
+        this.emit(["EVENT", "dashboard", forged]);
+        this.emit(["EVENT", "dashboard", good]);
+        this.emit(["EOSE", "dashboard"]);
+      }
+      close() {}
+    }
+    vi.stubGlobal("WebSocket", FakeSocket);
+    const events = await queryRelay(env, [{ kinds: [0] }]);
+    vi.unstubAllGlobals();
+    expect([...events]).toEqual([good]);
+    expect(events.received).toBe(2);
   });
 });
