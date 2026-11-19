@@ -20,7 +20,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { type Item, visibleViews } from "@/lib/views";
+import { type Item, viewHref, viewOf, visibleViews } from "@/lib/views";
 
 // DESIGN.md → Obsidian redesign: the selected item gets the --chip fill
 // (sidebar-accent) and a 1px inset border. Phones get 44px rows.
@@ -42,7 +42,7 @@ export function AppSidebar({
   /** Null when owner sign-in is off (#40). */
   signIn: SignInState | null;
 }) {
-  const active = usePathname().split("/")[1];
+  const active = viewOf(usePathname());
   const { setOpenMobile } = useSidebar();
   // Picking a view closes the phone drawer.
   const close = () => setOpenMobile(false);
@@ -106,7 +106,7 @@ export function AppSidebar({
                       tooltip={count ? `${label} · ${count} need you` : label}
                       render={
                         <Link
-                          href={`/${view}`}
+                          href={viewHref(view)}
                           onClick={close}
                           aria-current={view === active ? "page" : undefined}
                         />

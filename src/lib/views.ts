@@ -5,16 +5,25 @@ import {
   GitPullRequest,
   HeartPulse,
   Images,
+  LayoutDashboard,
   type LucideIcon,
   Rocket,
 } from "lucide-react";
 import type { NeedsYouKind, View } from "@/lib/needs-you";
 
-// Media and Cost never need the owner, so they have no count.
-export type Item = View | "media" | "cost";
+// Overview, Media and Cost never need the owner, so they have no count.
+export type Item = View | "overview" | "media" | "cost";
+
+/** The route of a view: Overview is the home at /. */
+export const viewHref = (view: Item) =>
+  view === "overview" ? "/" : `/${view}`;
+
+/** The view a pathname belongs to: "/" is Overview, "/agents/x" is Agents. */
+export const viewOf = (pathname: string): string =>
+  pathname.split("/")[1] || "overview";
 
 // DESIGN.md → Obsidian redesign → Shell changes: the Views group order.
-// Overview joins at the top with its page (#149). `history: true` marks a view
+// `history: true` marks a view
 // that reads the history store (#39), like Health and Cost; it leaves the
 // sidebar when DATABASE_URL is unset.
 export const VIEWS: {
@@ -23,6 +32,7 @@ export const VIEWS: {
   icon: LucideIcon;
   history?: true;
 }[] = [
+  { view: "overview", label: "Overview", icon: LayoutDashboard },
   { view: "agents", label: "Agents", icon: Bot },
   { view: "pipeline", label: "Pipeline", icon: GitPullRequest },
   { view: "health", label: "Health", icon: HeartPulse, history: true },

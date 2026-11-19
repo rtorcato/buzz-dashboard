@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { HeaderActions } from "@/components/header-actions";
 import { NeedsYouCard } from "@/components/needs-you-card";
+import { type BannerAgent, NeedsYouSlot } from "@/components/needs-you-slot";
 import { SourceDown } from "@/components/states";
 import {
   SidebarInset,
@@ -24,10 +25,11 @@ import {
   getNeedsYou,
   KIND_VIEW,
   type NeedsYouRow,
+  oldestFirst,
 } from "@/lib/needs-you";
 import { npubEncode } from "@/lib/npub";
 import type { PaletteItem } from "@/lib/palette";
-import { failingViews, visibleViews } from "@/lib/views";
+import { failingViews, viewHref, visibleViews } from "@/lib/views";
 
 export default async function ViewsLayout({
   children,
@@ -86,18 +88,23 @@ export default async function ViewsLayout({
             </div>
           </header>
           <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-6 px-4 py-6 sm:px-6">
-            <NeedsYouCard
-              data={needsYou}
-              now={now}
-              cleared={cleared}
-              snooze={
-                mutes && {
-                  mutes,
-                  canEdit: owner !== null,
-                  signIn: mode !== null,
+            <NeedsYouSlot
+              titles={oldestFirst(needsYou.rows).map((r) => r.title)}
+              agents={bannerAgents(hive?.agents ?? [], needsYou.rows)}
+            >
+              <NeedsYouCard
+                data={needsYou}
+                now={now}
+                cleared={cleared}
+                snooze={
+                  mutes && {
+                    mutes,
+                    canEdit: owner !== null,
+                    signIn: mode !== null,
+                  }
                 }
-              }
-            />
+              />
+            </NeedsYouSlot>
             {needsYou.failures.map((f) => (
               <SourceDown key={f.source} source={f.source}>
                 {f.detail}
@@ -160,7 +167,7 @@ function paletteItems(
     ...visibleViews(history).map(({ view, label }) => ({
       group: "Views" as const,
       label,
-      href: `/${view}`,
+      href: viewHref(view),
     })),
     { group: "Views", label: "Settings", href: "/settings" },
   ];
@@ -189,3 +196,13 @@ function paletteItems(
   );
   return [...views, ...people, ...prs];
 }
+
+// The Overview banner's avatar stack: the agents a Needs you row names.
+function bannerAgents(agents: Agent[], rows: NeedsYouRow[]): BannerAgent[] {
+  const text = rows.map((r) => `${r.title} ${r.detail}`).join(" ");
+  return agents
+    .filter((a) => new RegExp(`\\b${escapeRe(a.name)}\\b`).test(text))
+    .map((a) => ({ name: a.name, picture: a.picture }));
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
