@@ -1,17 +1,6 @@
 "use client";
 
-import { useHasMounted, useTheme } from "@rtorcato/react-common";
-import {
-  Eye,
-  EyeOff,
-  Lock,
-  Monitor,
-  Moon,
-  Pin,
-  RotateCcw,
-  Search,
-  Sun,
-} from "lucide-react";
+import { Eye, EyeOff, Lock, Pin, RotateCcw, Search } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { Avatar } from "@/components/agents-view";
 import {
@@ -141,24 +130,6 @@ function Row({
       </div>
       <div className="shrink-0">{children}</div>
     </div>
-  );
-}
-
-function ThemeChoice() {
-  const { theme, setTheme } = useTheme();
-  // next-themes only knows the stored theme once mounted.
-  const mounted = useHasMounted();
-  return (
-    <Choice
-      label="Theme"
-      value={mounted ? (theme ?? "system") : null}
-      onChange={setTheme}
-      options={[
-        { value: "system", label: "System", icon: <Monitor aria-hidden /> },
-        { value: "light", label: "Light", icon: <Sun aria-hidden /> },
-        { value: "dark", label: "Dark", icon: <Moon aria-hidden /> },
-      ]}
-    />
   );
 }
 
@@ -303,7 +274,6 @@ export function SettingsForm({
   publishedAt: number | null;
 }) {
   const s = useSettings();
-  const { setTheme } = useTheme();
   const tabCountId = useId();
   const now = Date.now();
   const fmt = {
@@ -339,9 +309,6 @@ export function SettingsForm({
         title="Appearance"
         description="How the dashboard looks on this device."
       >
-        <Row label="Theme">
-          <ThemeChoice />
-        </Row>
         <Row
           label="Density"
           hint="Compact tightens agent cards and table rows."
@@ -586,7 +553,6 @@ export function SettingsForm({
                   variant="destructive"
                   onClick={() => {
                     resetSettings();
-                    setTheme("system");
                   }}
                 >
                   Reset

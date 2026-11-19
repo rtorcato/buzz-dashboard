@@ -89,11 +89,11 @@ These replace the matching `.dark` values in Tokens. The `:root` light values ar
 
 ### Shell changes
 
-- **Header** (`h-14`, sticky, as before): the `SidebarTrigger` and a 1px divider, then a search field ("Search agents, PRs, channels…" with a `⌘K` hint) that opens a command palette. The palette searches what the dashboard already loads and only navigates. The view title moves out of the header into the page, as the 28px page title. On the right, in order:
+- **Header** (`h-14`, sticky, as before): the `SidebarTrigger` and a 1px divider, then a search field ("Search agents, PRs, channels…" with a `⌘K` hint) that opens a command palette. The palette searches what the dashboard already loads and only navigates: the views, the agents (to their pages) and the PRs and issues Needs you names (to Pipeline). Channels join once a view can show one. The view title moves out of the header into the page, as the 28px page title. On the right, in order:
   - **Live chip:** a green dot and "synced 4s ago". It replaces the freshness line and follows the same rules: after 5 minutes without a successful refresh it reads "synced 7m ago" in `warning` with a `triangle-alert` in place of the dot.
   - **Refresh**, the ghost icon button, stays next to the Live chip.
   - **Cost chip**, unchanged, and still absent without a cost source.
-  - A solid violet **Open in Buzz** button (`external-link`). The mockup's "Dispatch" label is dropped: the dashboard never posts, so the button only opens Buzz.
+  - A solid violet **Open in Buzz** button (`external-link`). The mockup's "Dispatch" label is dropped: the dashboard never posts, so the button only opens Buzz. It opens `BUZZ_WEB_URL`. Without that setting the button is not shown.
   - **Phones:** the search field becomes a `search` icon button that opens the palette, and Open in Buzz becomes an icon button with `aria-label="Open in Buzz"`.
 - **Sidebar:** the hive switcher stays at the top. The Views group is Overview, Agents, Pipeline, Health, Cost, Timeline, Releases and Media. Health and Cost still appear only with the history store. There is no Needs you item, because Needs you is the card on every view, and its counts stay on the views that own the items. Counts are solid `--primary` pills with white text, or solid `--destructive` with `--destructive-foreground` text when they are failures. The selected item gets the `--chip` fill and a 1px inset border. The footer is unchanged: the sign-in block, the "Read-only" or role line, then Settings. There is no "Workspace" group.
 
