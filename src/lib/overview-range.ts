@@ -39,3 +39,19 @@ export const hourLabel = (h: number, clock24: boolean) =>
   clock24
     ? `${String(h).padStart(2, "0")}:00`
     : `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+
+/** The index of the bucket holding `at`, or -1 before the first. */
+export function bucketOf(starts: number[], at: number): number {
+  for (let i = starts.length - 1; i >= 0; i--) if (at >= starts[i]) return i;
+  return -1;
+}
+
+/** How many of `times` fall in each bucket. */
+export function countInto(starts: number[], times: number[]): number[] {
+  const out = starts.map(() => 0);
+  for (const t of times) {
+    const i = bucketOf(starts, t);
+    if (i >= 0) out[i]++;
+  }
+  return out;
+}
