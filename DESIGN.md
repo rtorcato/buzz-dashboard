@@ -12,11 +12,113 @@ The design spec for buzz-dashboard. Read it before writing any UI code, and keep
 - **Update:** the Releases view (#71) and the first-run setup wizard (#73), approved by rtorcato on 2026-10-23. The wizard saves to a config store that env always overrides, so build that store first.
 - **Update:** the Toolkit card on the agent page, approved by rtorcato on 2026-11-11. Then on 2026-11-11, admin editing of agents, the sign-in gate with per-hive roles, and the hive switcher. Build them in this order: sign-in and roles, hive config with the switcher, the read-only Toolkit, then edit mode. On 2026-11-11 rtorcato chose Buzz 1.0 for Save (see Saving). Edit mode ships once the hive runs Buzz 1.0, and everything before it works on 0.X.
 - **Update:** Unknown presence and Archived agents, the Memory card, cost read with the owner's sign-in, config History and real hive icons, approved by rtorcato on 2026-11-11. Build them after sign-in, roles and the switcher, in this order: Unknown and Archived, Memory, Cost with your sign-in. History ships with Edit, once the hive runs Buzz 1.0.
+- **Update:** the Obsidian redesign (see Obsidian redesign), approved by rtorcato on 2026-11-19. It is a new visual layer, an Overview page at `/` and a few new charts, each with a named source. Every rule and data source above still applies. The lines it overrides below have been edited to match.
 - **Mockups:** kept outside the repo and not linked from it. This file is the spec, so build from the text below.
+
+## Obsidian redesign (2026-11-19)
+
+A darker, denser look for people who live in terminals. It changes how the dashboard looks, adds an Overview page and adds a few charts. It does not change who can write or the read-only rule. Every new chart names its source below, and like every other view it shows nothing when that source isn't connected (see History views).
+
+The lines elsewhere in this file that this section overrides have been edited to match: the header, the sidebar, the hero buttons, Settings, Rules, Tokens and Type. Where an older line and this section still disagree, this section wins.
+
+### Rules
+
+- **Dark only.** There is no light theme, and `next-themes` is pinned to dark. Only the Theme row leaves Settings → Appearance. Density and Motion stay there, so Settings → Motion → Reduced still works. The docs site keeps its light and dark screenshots of the old UI until the capture script reruns (see Screenshots).
+- **No gradients on controls.** Buttons, badges, labels, nav counts, avatars, chips, progress bars, model bars, stage bars and banners are solid colours or a flat tint. rtorcato's call: gradients on controls read as toy-like for this audience.
+- **Fades only in data and background.** Two gradients are allowed: the soft fade under a line or area chart (series colour at 35% to 0%, top to bottom) and the faint page glow (below). Nothing else.
+- **No glow shadows on controls.** Buttons have no coloured drop shadow. The hero portrait has a 1px border ring only.
+- **Honey stays on the logo.** Amber still means "waiting on you". Violet is the action colour.
+
+### Tokens
+
+These replace the matching `.dark` values in Tokens. The `:root` light values are no longer used.
+
+```css
+.dark {
+  --background: #06070b;
+  --sidebar: #0b0d14;
+  --card: #0f1015;              /* solid; was rgba(255,255,255,.035) in the mockup */
+  --border: rgb(255 255 255 / 0.075);
+  --foreground: #eef0f6;        /* 16.7:1 on card */
+  --muted-foreground: #8a90a6;  /* 6.0:1 on card, 5.3:1 on --chip */
+  --faint: #7a809b;             /* axis labels, timestamps; 4.9:1 on card. The mockup's #5b6178 is 3.1:1 and fails AA */
+  --grid: rgb(255 255 255 / 0.06);
+  --chip: rgb(255 255 255 / 0.06);  /* about #1d1e23 over --card */
+
+  --primary: #6a5ae8;           /* solid buttons and nav counts; white text 4.95:1. The mockup's #7c6cff is 3.9:1 with white and fails AA */
+  --primary-foreground: #ffffff;
+  --series-1: #7c6cff;          /* violet: messages, turns */
+  --series-2: #22d3ee;          /* cyan: agent turns on Overview */
+  --series-3: #f472b6;          /* pink: errors */
+
+  --success: #34d399;           /* 9.9:1 */
+  --warning: #fbbf24;           /* 11.4:1 */
+  --destructive: #fb7185;       /* 7.1:1 on card, 6.2:1 on its 10% tint */
+  --destructive-foreground: #06070b;  /* text on a solid --destructive fill, 7.5:1. White is 2.7:1 and fails AA */
+}
+```
+
+- **What survives from Tokens:** `--info`, `--chart-1..3`, `--model-1..3`, `--stage-1..3` with their foregrounds, and `--mark`, all at their existing `.dark` values. The Overview and agent-page charts use `--series-*`. Anything split by model (Spend by model, the Cost charts) keeps `--model-*`, which is the set that passed the colorblind validator. The series set has not been validated as a set, so it never encodes a model and every value it draws is also in a legend or tooltip.
+- **`--faint` never sits on `--chip`.** It is about 4.3:1 there and fails AA. Text on a chip uses `--muted-foreground` (5.3:1) or `--foreground`.
+- **Page glow:** two radial gradients on the app shell, behind everything: violet `rgb(124 108 255 / .22)` at 15% / −10% (1200 × 600) and cyan `rgb(34 211 238 / .14)` at 95% / 5% (900 × 500), each fading to transparent at 60%. Static, never animated.
+- **Series colours** are for lines, bars and dots, not text. Every value they encode is also in a legend, tooltip or table.
+- **Status tints** (badges, the Needs-you banner, KPI icon tiles, deltas) are the status colour at 10–16% over `--card`, with the text in the full status colour.
+- **Radius:** cards 16px, buttons and inputs 10px, pills full.
+- **Type:** see Type. Inter and JetBrains Mono replace Geist and Geist Mono everywhere in the app.
+
+### Overview (new home)
+
+`/` becomes Overview and Agents moves to `/agents`. Overview sits first in the sidebar with `layout-dashboard`. With more than one hive the route is `/h/<hive>`.
+
+1. **Greeting:** "Good afternoon" and a muted line, "11 agents working across 9 channels. One needs a look." The time of day follows Settings → Time → Time zone (Local or UTC). On the right, a `ToggleGroup` range: 24h, 7d, 30d, 90d, default 7d. Without the history store only 24h and 7d show, since the live reads cover 7 days.
+2. **Needs you banner:** on Overview the Needs you card collapses to one row: an amber `triangle-alert` tile, "3 things need you", the items joined by " · " (muted), a stack of the involved agents' avatars and a ghost "Review all" (`chevron-down`). Same items, colours and order as Needs you. "Review all" expands the full card in place, with its row actions, footer and History, and the button becomes "Collapse". With zero items the banner becomes the green "All clear" line. Every other view keeps the full card at the top, and Settings still has none.
+3. **KPI row:** one card per metric, each with a tinted icon tile, label, value, a delta pill against the previous period of the same length (green up, red down, neutral grey for cost), and a 44px sparkline with the fade. The labels carry the range ("Messages · 7d").
+   - **Active agents** (violet): now, from relay presence and the status feed, ranked the same as the Agents badges. Unknown agents aren't counted.
+   - **Messages** (cyan): from the relay.
+   - **PRs merged** (green): from GitHub, with the Pipeline attribution.
+   - **Est. cost** (pink): from the cost source, labelled "est.".
+   - **Deltas** need the history store. Without it the pill is not shown, never a zero.
+   - **No cost source:** the cost card is not shown and the row is 3 equal columns.
+4. **Hive activity** (2/3 width): an area chart over the selected range of messages (`--series-1`, relay), agent turns (`--series-2`, relay turn metrics, as Health) and errors (`--series-3`, the cost source's stop reasons, as Health). Smoothed lines with fades, a hover tooltip with the date and values, and a dashed crosshair. Buckets are hourly at 24h and daily otherwise. With no cost source the errors line is left out and the legend shows a dashed "Errors · not connected" entry.
+5. **Spend by model** (1/3): a donut with the range total in the middle, `--model-*` colours, a legend with solid swatches, amounts and shares, then Cache hit and Tokens for the range. Same source and estimate label as Cost. **No cost source:** this card is not shown, and Hive activity takes the full width.
+6. **Agents:** a 6-column grid of compact cards: 40px picture with a status dot, name, role, "Working on" one line, messages today and a 7-day sparkline line (no fill). The sparkline is always 7 days, like the Agents view, whatever the range. An agent Health marks Failing gets a destructive border and 6% tint, and a Stalled agent keeps the stalled ring. A `ToggleGroup` filter with counts uses the Agents view's set and definitions: All, Active, Quiet, Stopped. Unknown agents show under All with the muted Unknown badge. Archived agents never show on Overview; the Agents view keeps the Archived filter. Each card links to its agent page.
+7. **Bottom row:**
+   - **Live feed:** the latest 6 events from the Timeline live feed, with avatars, mono keys in `--series-1`, relative times and an "Open Timeline" link. It doesn't follow the range.
+   - **PR pipeline:** one solid horizontal bar per Pipeline Now stage, in `--series-1`, with the stage label in mono and the count (GitHub, same counts as Pipeline). The blocked stage adds `octagon-alert` and its count in `--destructive`. Then "Median open → merged" over the range, from Pipeline Flow. Without the history store the median line is not shown.
+   - **When the hive works:** a 7 × 24 heatmap of messages by weekday and hour, from the relay. At 24h and 7d it shows the last 7 days. At 30d and 90d it shows the average per weekday and hour over the range, which needs the history store. Five steps of `--series-1` over `--card` at 15%, 30%, 50%, 75% and 100%, and empty cells on `--chip`. The cells are graphics, not text, so a "Less ▢▢▢▢▢ More" legend sits under the grid, each cell has a tooltip ("Tue 14:00 · 38 messages"), and a visually hidden table carries the same numbers. The peak hour is named in text under it ("Busiest: Tue 2 PM").
+
+### Shell changes
+
+- **Header** (`h-14`, sticky, as before): the `SidebarTrigger` and a 1px divider, then a search field ("Search agents, PRs, channels…" with a `⌘K` hint) that opens a command palette. The palette searches what the dashboard already loads and only navigates. The view title moves out of the header into the page, as the 28px page title. On the right, in order:
+  - **Live chip:** a green dot and "synced 4s ago". It replaces the freshness line and follows the same rules: after 5 minutes without a successful refresh it reads "synced 7m ago" in `warning` with a `triangle-alert` in place of the dot.
+  - **Refresh**, the ghost icon button, stays next to the Live chip.
+  - **Cost chip**, unchanged, and still absent without a cost source.
+  - A solid violet **Open in Buzz** button (`external-link`). The mockup's "Dispatch" label is dropped: the dashboard never posts, so the button only opens Buzz.
+  - **Phones:** the search field becomes a `search` icon button that opens the palette, and Open in Buzz becomes an icon button with `aria-label="Open in Buzz"`.
+- **Sidebar:** the hive switcher stays at the top. The Views group is Overview, Agents, Pipeline, Health, Cost, Timeline, Releases and Media. Health and Cost still appear only with the history store. There is no Needs you item, because Needs you is the card on every view, and its counts stay on the views that own the items. Counts are solid `--primary` pills with white text, or solid `--destructive` with `--destructive-foreground` text when they are failures. The selected item gets the `--chip` fill and a 1px inset border. The footer is unchanged: the sign-in block, the "Read-only" or role line, then Settings. There is no "Workspace" group.
+
+### Agent page
+
+Same route, same cards and same data as Agent page. What changes:
+
+- **Hero:** the picture at 132px with a 32px radius and a 1px border ring, name 40px bold with the status badge, role line, then a meta row: Home `#channel`, Model, Uptime and the truncated npub in mono. A faint violet radial in the top-left corner of the hero card is allowed as part of the background glow.
+- **Hero buttons**, in order on the right:
+  - Solid **Open channel** (`external-link`). It is the old "Open in Buzz", renamed because it opens the agent's home channel.
+  - Outline **PRs** (`external-link`), as before.
+  - **Admins only:** outline Edit profile (opens the #113 steps modal), Edit once publishing works (see Editing agents and Saving), and History on Buzz 1.0 hives. Edit profile and Edit are not outbound links, so they carry their own icons, not `external-link`.
+  - The mockup's "Edit in Desktop" is not built as a link. A dashboard can't open the Desktop app (see Edit profile), so the existing Edit profile and Agent settings modals keep that job.
+- **KPI row:** the 4 stat cards get the Overview KPI style: icon tile, delta pill and fading sparkline. Deltas need the history store, as on Overview.
+- **Turns and errors:** replaces the Activity bar chart, in the same place and with the same 7d / 14d / 30d `ToggleGroup` (default 14d), in the Hive activity style. Turns come from the relay turn metrics and errors from the cost source, as Health. With no cost source the errors line is left out, as on Overview. **p50 latency** is drawn only once a source reports turn duration. v1 has none (Health's Turn duration stays not connected), so until then its legend entry is a dashed "Latency · not connected".
+- **Where the time goes:** not in v1. No source reports what kind of work a turn was, so building it now would mean guessing. Where they talk stays in the right column as before.
+- **Recent merges:** a table of PR (key in violet mono and title), repo (mono), reviewers (the GitHub avatars of the PR's reviewers, deduplicated, or a muted "–"), a solid "open → merged" bar with the duration (from GitHub's opened and merged times) and a green Merged badge. It replaces the Recent PRs list when the agent has a merged PR in the last 14 days. Otherwise the card stays Recent PRs. Attribution is the same `@Name` rule as Recent PRs.
+
+### Phones
+
+Phones follow the existing phone rules in each section, one column. The Overview KPI row is 2 × 2 (3 cards wrap to 2 + 1), the agents grid is 2 columns, and the charts show 7 days whatever the range.
 
 ## Principle
 
-It's a glanceable ops screen, and it answers one question first: **"does anything need me right now?"** The **Needs you** card sits above every view and is never hidden behind one. Everything else is detail.
+It's a glanceable ops screen, and it answers one question first: **"does anything need me right now?"** The **Needs you** card sits above every view and is never hidden behind one. On Overview it starts as a one-row banner with the same items, which expands to the full card (see Obsidian redesign). Everything else is detail.
 
 The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an outbound link, marked with the `external-link` icon, and the dashboard never posts to the relay or GitHub. The one exception to "never posts" is the opt-in Buzz DM alert channel (#45), which sends only to the owner with a posting key of its own, never the hive's. The other exception is the dashboard's own state, and only for the signed-in owner (#40): snooze and ack, alert channels and rules, custom stages, and the cost source with its ingest token. Viewers can't write anything, and signed-out visitors only ever see the sign-in page.
 
@@ -27,8 +129,8 @@ The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an 
 ## Shell (every view)
 
 - **Sidebar** (#58): see Sidebar below. It holds the Hive mark, the views and Settings.
-- **Header** (`h-14`, sticky, inside `SidebarInset`): the `SidebarTrigger`, a 1px divider and the current view's title, then on the right the **cost chip** (below), the freshness line ("Updated 14s ago" with a green dot) and Refresh as a ghost icon button (`size-9`). The mark, "Read-only" and the theme toggle leave the header: the first two move to the sidebar, and the theme lives in Settings.
-- **Cost chip** (#42): it replaces the 5h/7d usage chip (#25) in the same slot, to the left of the freshness line with a 1px divider between them. It is a `h-9` bordered chip: `coins` (muted), the estimated cost so far today ("$38.40", `font-semibold tabular-nums`), then "today · est." muted. It links to Cost. On phones it drops "today · est." and keeps the icon and amount, with an `aria-label` of "Estimated cost today, $38.40".
+- **Header** (`h-14`, sticky, inside `SidebarInset`): the `SidebarTrigger`, a 1px divider and the search field, then on the right the Live chip (the freshness line), Refresh as a ghost icon button (`size-9`), the **cost chip** (below) and Open in Buzz. See Shell changes under Obsidian redesign. The mark and "Read-only" live in the sidebar. There is no theme toggle, because the app is dark only.
+- **Cost chip** (#42): it replaces the 5h/7d usage chip (#25), to the right of Refresh with a 1px divider between them. It is a `h-9` bordered chip: `coins` (muted), the estimated cost so far today ("$38.40", `font-semibold tabular-nums`), then "today · est." muted. It links to Cost. On phones it drops "today · est." and keeps the icon and amount, with an `aria-label` of "Estimated cost today, $38.40".
   - **No cost source connected:** there is no chip at all, not an empty one.
   - The usage pause still reaches the owner through the "Paused for usage" Needs-you row below, which reads the status feed as before.
 - **Needs you** (`Card`): one row per item type, oldest first, each linking to its view. Snooze, ack, the footer and History are under Needs you: snooze and ack (#46).
@@ -41,16 +143,16 @@ The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an 
   - A muted "Heads-up" footer line that isn't counted: an agent has held a claim but been quiet for more than 2 hours, or the status feed is stale ("Runtime feed is 38m old (is the runtime host asleep?)").
   - With zero items, the card collapses to one green "All clear" line (see States).
   - Open `merge-ready` PRs: neutral (`border-border bg-muted text-foreground`), `git-merge` icon. A merge-ready PR is waiting on a click, not a fault, and green would read as cleared. "2 PRs ready to merge", then the repo#number keys. It links to Pipeline. For most deployments they wait on the owner; one with a merge bot hides the row with `NEEDS_YOU_EXCLUDE_LABELS=merge-ready`.
-- **Needs you** stays above every view, at the top of the main column. Settings is the one page without it, because the sidebar counts already show.
+- **Needs you** stays above every view, at the top of the main column. On Overview it starts collapsed to the banner. Settings is the one page without it, because the sidebar counts already show.
 
 ## Sidebar (#58)
 
 The `ViewTabs` pill row goes. Use the stock shadcn `Sidebar` with `collapsible="icon"`, wrapped in `SidebarProvider` with `SidebarInset` for the page.
 
 - **Top** (`SidebarHeader`): the hive switcher (see Hive switcher). With one hive configured it looks like the old header, the 32px mark tile, the hive name (semibold) and "buzz-dashboard" (muted, 12px), plus `chevrons-up-down`.
-- **Views** (`SidebarGroup` labelled "Views"): Agents, Health, Pipeline, Releases, Timeline, Cost and Media, as `SidebarMenuButton` links with their lucide icons (`bot`, `heart-pulse`, `git-pull-request`, `rocket`, `activity`, `coins`, `images`). The current route gets `isActive`. Health and Cost only appear when the history store is configured (#39).
+- **Views** (`SidebarGroup` labelled "Views"): Overview, Agents, Pipeline, Health, Cost, Timeline, Releases and Media, as `SidebarMenuButton` links with their lucide icons (`layout-dashboard`, `bot`, `git-pull-request`, `heart-pulse`, `coins`, `activity`, `rocket`, `images`). The current route gets `isActive`. Health and Cost only appear when the history store is configured (#39).
 - **"new" tag:** for 14 days after a view first appears, it carries a muted, outlined "new" pill in the badge slot, unless it has a count to show. It is decoration, so give it `aria-hidden`.
-- **Counts:** a view that owns Needs-you items shows its count in a `SidebarMenuBadge`, as a red pill (same data as `countsByView`). In light mode the pill text is `red-700` on the `destructive/15` tint (about 4.9:1). Plain `text-destructive` is about 3.6:1 there and fails AA, which also fixes the old tab pills.
+- **Counts:** a view that owns Needs-you items shows its count in a `SidebarMenuBadge`, as a solid `--destructive` pill with `--destructive-foreground` text (about 7.5:1; same data as `countsByView`). White on `--destructive` is about 2.7:1 and fails AA.
 - **Bottom** (`SidebarFooter`): the sign-in block (#40, below), a muted "Read-only" line with the `eye` icon (not a link), then Settings (`settings` icon, `/settings`) as a menu button. When signed in, the line shows your role in this hive: "Viewer · read-only" (`eye`) or "Admin · can edit agents" (`shield`).
 - **Sign-in block** (#40). Every page sits behind sign-in (see Sign-in and roles), so the shell only renders signed in:
   - **Signed in:** a bordered row with a 32px initials `Avatar` (the profile picture when there is one), the name (500) and the truncated npub in mono 12px, then `chevrons-up-down`. In proxy mode the second line reads "via proxy · <the header's user>".
@@ -73,7 +175,7 @@ The `ViewTabs` pill row goes. Use the stock shadcn `Sidebar` with `collapsible="
 
 ## Agents on phones (#20)
 
-Below `sm` (640px) only. At `sm` and up the Agents view stays as described above. The view must not scroll sideways anywhere from 360 to 430px, in either theme.
+Below `sm` (640px) only. At `sm` and up the Agents view stays as described above. The view must not scroll sideways anywhere from 360 to 430px.
 
 - **Toolbar, row 1:** "Agents" (`text-lg font-semibold`) on the left and the sort `Select` on the right. The trigger keeps its full label ("Sort: needs attention") at `h-11 sm:h-9`. It fits down to 360px, so there's no icon-only trigger and no shortened labels.
 - **Toolbar, row 2:** the filter `fieldset` at full width (`w-full sm:w-auto`). Its 4 buttons share the row (`flex-1 justify-center sm:flex-none`) at `h-11 sm:h-9` and `px-2 sm:px-3`, which gives about 89px each at 390px and 82px at 360px.
@@ -119,7 +221,7 @@ Each Agents card gets a row between its header and "Working on", in a bordered `
 
 ## Agent page (#27)
 
-The route is `/agents/[name]`, where `name` is the lowercased display name with spaces as hyphens (`/agents/optimus-prime`). Renamed agents redirect from their old name (`/agents/fizz`). With more than one hive the route is `/h/<hive>/agents/<name>` (see Hive switcher). The shell (header, Needs you, sidebar) stays, with Agents active in the sidebar. For viewers it's read-only, so every action is an outbound link. Admins also get Edit (see Editing agents).
+The route is `/agents/[name]`, where `name` is the lowercased display name with spaces as hyphens (`/agents/optimus-prime`). Renamed agents redirect from their old name (`/agents/fizz`). With more than one hive the route is `/h/<hive>/agents/<name>` (see Hive switcher). The shell (header, Needs you, sidebar) stays, with Agents active in the sidebar. See Agent page under Obsidian redesign for the hero, KPI and chart changes. For viewers it's read-only, so every action is an outbound link. Admins also get Edit (see Editing agents).
 
 - **Breadcrumb** (shadcn `Breadcrumb`): "← Agents › Bumble". The back link is a `h-9` target.
 - **Stalled alert:** only when the agent is stopped with open claims. A destructive `Alert` with `power-off`: "Bumble stopped 3h 05m ago while holding 2 claims", then "Restart it from Buzz Desktop, or ask Prime to reassign the claims. This page is read-only."
@@ -128,7 +230,7 @@ The route is `/agents/[name]`, where `name` is the lowercased display name with 
   - On the right, stacked:
     - Name (`text-3xl font-semibold tracking-tight`) and the status `Badge`.
     - Role · `@Name` in PR headers (muted, with the handle in mono).
-    - Outline "Open in Buzz" and "PRs" `Button`s (`external-link`) on the same row.
+    - Solid "Open channel" and outline "PRs" `Button`s (`external-link`) on the same row, then the admin buttons (Edit profile, Edit, History).
     - The runtime row, with "Last turn" and "Last seen" on its right.
 - **Stats:** 4 stat `Card`s.
   - Messages today (with "47 this week").
@@ -137,19 +239,19 @@ The route is `/agents/[name]`, where `name` is the lowercased display name with 
   - Median PR to merge (last 7 days).
 - **Left column** (2 of 3 at `xl`):
   - **Open claims:** a `Table` of issue (key in mono, title muted under it), label (mono pill: `ai-wip` info, `ai-review` neutral, `ai-changes` warning, `ai-blocked` destructive), progress ("PR #23 · CI green" or "no PR yet"), how long it has been held, and an external link. The count pill is destructive when stalled and muted otherwise. When stalled, the subtitle reads "Held while the runtime is stopped. Nobody is working these." and the ages turn destructive. With no claims, the card shows a dashed "No open claims" box rather than hiding, so the layout doesn't jump.
-  - **Activity:** a `BarChart` of messages per day, chart-3 with today in chart-1, plus a `ToggleGroup` for 7d, 14d or 30d.
-  - **Toolkit:** see Toolkit below. It sits between Activity and Messages: it's reference info, so it goes below the live data.
+  - **Turns and errors** (was Activity): see Agent page under Obsidian redesign. Same place, same 7d, 14d or 30d `ToggleGroup`.
+  - **Toolkit:** see Toolkit below. It sits between Turns and errors and Messages: it's reference info, so it goes below the live data.
   - **Memory** (owner only): see Memory below. It sits right under Toolkit.
   - **Messages:** the agent's messages, newest first, grouped by day under sticky labels. Each row has the time, a mono `#channel` chip, the text and an external link to the message. A `Select` filters by channel.
 - **Right column:**
   - **Runtime:** a `dl` of State, Stopped at / Since, Last turn, Started and Model (mono), with a footer reading "From the status feed · as of 2m ago". When the agent isn't reported, it shows `circle-help` and "Not reported. The status feed has no runtime for this agent." with no red.
-  - **Recent PRs:** the last 5 PRs whose body names `@Name` (the same attribution as Pipeline). Each row has a state pill (`open` info, `merged` success, `closed` muted), the title, the key in mono, the age and an external link, with an outline "All on GitHub" in the header.
+  - **Recent PRs** (or Recent merges, see Obsidian redesign): the last 5 PRs whose body names `@Name` (the same attribution as Pipeline). Each row has a state pill (`open` info, `merged` success, `closed` muted), the title, the key in mono, the age and an external link, with an outline "All on GitHub" in the header.
   - **Where they talk:** messages per channel over the last 7 days, the top 5, as thin chart-3 bars with counts.
   - **Identity:** the npub truncated in mono with a copy `Button` (`size-9`), "Also seen as N older identities · formerly X", and the home channel.
 - **States:**
   - **Loading:** `Skeleton`s that keep each card's height, hero and stats first.
   - **Unknown name:** a 404 with `user-x`, "No agent called “x”", "It may have been renamed or retired." and an outline "All agents" link.
-- **Phone:** one column. Breadcrumb, then a compact alert, then the hero centred (a 112px avatar above the name, with the buttons as two 44px halves). Then the stats 2×2, then Open claims as a list with chevrons, and after that Runtime, Recent PRs, Activity, Messages, Where they talk and Identity.
+- **Phone:** one column. Breadcrumb, then a compact alert, then the hero centred (a 112px avatar above the name, with the buttons as two 44px halves). Then the stats 2×2, then Open claims as a list with chevrons, and after that Runtime, Recent PRs (or Recent merges), Turns and errors, Messages, Where they talk and Identity.
 
 ### Toolkit
 
@@ -219,7 +321,7 @@ The dashboard can't publish a config revision yet (see "Check during the build" 
 
 The avatar, display name and About live in the agent's own profile event, and only the agent's key can sign it. Buzz Desktop holds that key and this dashboard never does, so the dashboard points to Desktop the same way the #109 Agent settings card does: same modal shell, same steps, same buttons. Mockups: `buzz-dashboard/agent-profile-*` on R2.
 
-- **Button:** an outline "`user-pen` Edit profile", the first button in the hero's row, before Open in Buzz and PRs. Admins only, like Agent settings. Viewers never see it.
+- **Button:** an outline "`user-pen` Edit profile", in the hero's row after Open channel and PRs. Admins only, like Agent settings. Viewers never see it.
 - **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Edit the profile in Buzz Desktop".
   - A Change `Select` (Avatar, Display name, About), with the current avatar (`Avatar`, 40px) beside it when Avatar is picked.
   - Display name and About get a New value `Input` (About a `Textarea`), so the steps fill in live: "Set Display name to **Bumblebee**". Under it, a muted "Now Bumble" shows the current value.
@@ -429,7 +531,7 @@ The Flow tab answers "where do PRs wait?", for any repo and with no setup.
   - **Release run:** one of a warning `Badge` "`clock` Waiting for you · 5h", a destructive `Badge` "`circle-x` CI red on main", muted "`circle-dashed` Not started", `circle-check-big` (success) + muted "Published Oct 21", or "–".
   - A `chevron-right` (muted) on each row, `chevron-down` when open.
 - **Sort:** waiting for approval, then red CI, then the most unreleased releasing commits, then repos with only non-releasing commits, then up to date. Ties go by repo name.
-- **Type chips:** Geist Mono 11.5px, 20px tall, `rounded-[5px]`, a 1px border at 35% and a fill at 8% of their colour. `feat` uses `info`, `fix` and `perf` use `success`, and a breaking change uses `destructive` and reads "feat!" (or "fix!"). Everything else (docs, chore, refactor, test, ci, build, style) is muted on `muted`. The type is always written out, so the colour is never the only signal.
+- **Type chips:** JetBrains Mono 11.5px, 20px tall, `rounded-[5px]`, a 1px border at 35% and a fill at 8% of their colour. `feat` uses `info`, `fix` and `perf` use `success`, and a breaking change uses `destructive` and reads "feat!" (or "fix!"). Everything else (docs, chore, refactor, test, ci, build, style) is muted on `muted`. The type is always written out, so the colour is never the only signal.
 - **Expanding a row:** the whole row is a button (`aria-expanded`) that opens the commit list under it. Any number can be open. The open row gets a 3% `foreground` tint and a 3px `foreground` bar on its left edge. The list, on the same tint and indented to line up with the Latest tag column, shows one line per commit, newest first: type chip, subject, PR number (mono, muted), agent (from the PR's `@Name` header, muted) and age. It shows 4, then a footer: "+ 3 more · 2 fix, 1 chore · Merged since `v3.1.0` on Mon", with "Compare on GitHub" (`external-link`) on the right, linking to `compare/<tag>...main`.
 - **"Next" is labelled a guess.** It comes from the conventional-commit prefixes since the last tag: `feat` → minor, `fix` and `perf` → patch, `!` or a `BREAKING CHANGE` footer → major. The table footer says so, with `info`: "“Next” reads the conventional-commit prefixes since the last tag (feat → minor, fix → patch, ! → major). It’s a guess; the release workflow decides."
 - **No GitHub source** (no `GITHUB_TOKEN`): one `Card` with two dashed not-connected boxes, "Tags, unreleased commits and release runs · Read from GitHub for each watched repo." (`git-branch`) and "Last publish · The latest npm version of each repo’s package." (`package`), each with a mono "not connected", then an outline "`plug-zap` Connect a source" `Button` to Settings → Sources. npm needs GitHub too, since the package names come from each repo's `package.json`. No stats, no zeros.
@@ -530,7 +632,7 @@ A gallery of every file the agents upload to the public R2 media bucket, served 
 - **Grouping:** by repo, then by date, newest first. Repos are ordered by their newest upload. Each repo header has a `folder` icon, the repo name in mono, a muted file-count pill and a "View all" link that sets the repo filter. Each date label reads "Wed Oct 7 · 6" (muted, `text-xs`).
 - **Page size:** with "All repos", each repo shows its 2 newest dates, at most 10 tiles. With one repo selected, every date shows, 60 tiles a page, and an outline "Load older" `Button` follows the `ListObjectsV2` continuation token.
 - **Grid:** 2 columns on phones, 3 at `sm`, 4 at `lg`, 5 at `xl`. Gap 12px on phones, 16px above.
-- **Tile** (a `Card`): a 4:3 thumbnail on `bg-muted`, `object-cover object-top` (screenshots read from the top), then a footer row with the filename (Geist Mono 13px, truncated, full key in `title`), the time and size (`text-xs`, muted), and a ghost icon `Button` (`size-9`, `link` icon, `aria-label="Copy link to <file>"`). The copy button is always visible, never hover-only.
+- **Tile** (a `Card`): a 4:3 thumbnail on `bg-muted`, `object-cover object-top` (screenshots read from the top), then a footer row with the filename (JetBrains Mono 13px, truncated, full key in `title`), the time and size (`text-xs`, muted), and a ghost icon `Button` (`size-9`, `link` icon, `aria-label="Copy link to <file>"`). The copy button is always visible, never hover-only.
   - **Thumbnail URL:** `${MEDIA_BASE_URL}/cdn-cgi/image/width=480,format=auto/<key>` for png, jpg, webp and gif. SVGs load the original. Use `loading="lazy"` and `decoding="async"`.
   - **Not an image** (html, pdf, …): the thumbnail area shows a `file-code` icon (or `file`) and the extension. Clicking it **downloads** the file and never renders it, and the footer icon is `download` instead of `link`. The bucket is public, so an `.html` file rendered from the media host would run as a live page on that domain. Any uploader must therefore send every non-image file with `Content-Disposition: attachment`, and the tile link also carries the `download` attribute.
   - **Thumbnail fails to load:** keep the tile's size and show `image-off` with "No preview" (see States).
@@ -554,15 +656,14 @@ A gallery of every file the agents upload to the public R2 media bucket, served 
 
 | Section | Setting | Control | Default |
 |---|---|---|---|
-| **Appearance** · How the dashboard looks on this device. | Theme | ToggleGroup: System (`monitor`) / Light (`sun`) / Dark (`moon`) | System. It uses the existing `next-themes` wiring. |
-| | Density · Compact tightens agent cards and table rows. | ToggleGroup: Comfortable / Compact | Comfortable |
+| **Appearance** · How the dashboard looks on this device. | Density · Compact tightens agent cards and table rows. | ToggleGroup: Comfortable / Compact | Comfortable |
 | | Motion · System follows your OS reduce-motion setting. | ToggleGroup: System / Reduced / Full | System. Reduced turns off everything in Motion, the same as `prefers-reduced-motion: reduce`. |
 | **Time** · Logs and messages are recorded in UTC. | Timestamps | ToggleGroup: Relative / Absolute | Relative |
 | | Clock | ToggleGroup: 12h / 24h | follows the browser locale |
 | | Time zone | ToggleGroup: Local / UTC | Local. Under it, a mono preview chip shows the result ("Preview: 2h ago · Tue 14:05"). |
 | **Data and refresh** · The page re-reads the hive on this schedule. | Auto-refresh · Off still lets you refresh by hand. | ToggleGroup: Off / 30s / 1m / 5m | 1m (today's `REFRESH_EVERY_MS`) |
 | | Quiet after · An agent with no messages for this long shows as Quiet. | Select: 30 minutes, 1, 2, 4, 8 hours | 2 hours |
-| **Agents** · The Agents view and the default landing page. | Open on · The view you land on at /. | Select: the five views | Agents |
+| **Agents** · The Agents view and the default landing page. | Open on · The view you land on at /. | Select: Overview, Agents, Pipeline, Health, Cost, Timeline, Releases, Media (Health and Cost only with the history store) | Overview |
 | | Default filter | ToggleGroup: All / Active / Quiet / Stopped | All |
 | | Default sort | Select: the Agents view's sort options | Needs attention |
 | | Pinned and hidden · Pinned agents sit at the top. Hidden agents leave the Agents view, but they still count in Needs you. | a filter `Input` (`search` icon), then one row per agent: `Avatar`, name, muted role, and two ghost icon toggle buttons, Pin (`pin`) and Hide (`eye` / `eye-off`). A pressed toggle gets the `accent` background. A hidden agent's row is dimmed to 60%. | none pinned, none hidden |
@@ -577,7 +678,7 @@ What changed from the request in #58, as approved:
 - **Dropped: "Sidebar collapsed by default".** The sidebar already remembers its last state.
 - **Merged: pin and hide** into one "Pinned and hidden" list with two toggles per agent.
 - **Merged: default landing view** into "Open on" under Agents, so there is no Navigation section.
-- **Moved: the theme toggle** leaves the header for Appearance.
+- **Dropped: the theme toggle** (Obsidian redesign, 2026-11-19). The app is dark only, so the Theme row left Appearance. Density and Motion stay.
 - **About** shows no infrastructure: no feed URL, hostnames or bucket names.
 
 ## Setup wizard (#73)
@@ -737,12 +838,12 @@ Approved by rtorcato on 2026-11-11. Layouts are as specced above; this adds moti
 - **Status = color + icon + label**, never color alone. Status colors are never used as chart series, with one exception: the Health turns chart, where the error series *is* the status (its legend carries the icon too).
 - **Estimates are labelled.** Every dollar figure says "est." or sits under the "Estimated, at API list price" pill.
 - **Unconnected sources show nothing,** never a zero or a placeholder figure (see History views).
-- **Numbers** use `tabular-nums`. Repo names, SHAs and labels use Geist Mono at 13px.
+- **Numbers** use `tabular-nums`. Repo names, SHAs and labels use JetBrains Mono at 13px.
 - **Charts** have 4px rounded bar tops, a dashed recessive grid, a tooltip on hover, and a legend when there are two or more series.
 - **Touch targets** are at least 36px on desktop, and rows are at least 44px on phones. Keep shadcn's default visible focus ring (`ring`).
 - **Breakpoints:** below 640px, one column; `md`, 2 columns; `xl`, 3 columns or cards side by side. On phones the chart shows 7 days.
-- **Freshness:** after 5 minutes without a successful refresh, "Updated 7m ago" turns `warning`. A failed source shows a destructive `Alert` on its own sections only. The other sections keep rendering.
-- **Contrast:** meet WCAG 2.1 AA in both themes. The status tokens below are text-safe (at least 4.5:1) on `background` and on their own 10% tint.
+- **Freshness:** after 5 minutes without a successful refresh, the Live chip's "synced 7m ago" turns `warning`. A failed source shows a destructive `Alert` on its own sections only. The other sections keep rendering.
+- **Contrast:** meet WCAG 2.1 AA in the dark theme, the only one. The status tokens below are text-safe (at least 4.5:1) on `background` and on their own 10% tint.
 
 ## Data display notes
 
@@ -780,7 +881,7 @@ It stays inside Docusaurus: only `src/pages/index.tsx` and `index.module.css` ch
 
 - Real views running on sample data only. No real names, pubkeys, channels, repos or bucket keys. Sample repos are `example-app` style names.
 - One light and one dark file per shot, in `apps/docs/static/img/screens/`: `agents`, `needs-you`, `agents-grid`, `agent-page`, `media` (desktop, 1440 × 900 viewport at 2x) and `mobile` (390 × 844 at 3x). `needs-you` and `agents-grid` are element captures of those regions of the Agents view, not CSS background crops, so they scale and carry their own alt text.
-- Each pair renders through `@theme/ThemedImage` so the theme toggle swaps it. Wrap every `ThemedImage` in a `div` that carries the module class: ThemedImage sets `display: initial`, which beats a class put on it directly.
+- Each pair renders through `@theme/ThemedImage` so the theme toggle swaps it. Once the capture script reruns on the dark-only app it shoots one dark file per shot, and both `ThemedImage` sources point at it. Wrap every `ThemedImage` in a `div` that carries the module class: ThemedImage sets `display: initial`, which beats a class put on it directly.
 - Ship WebP (quality 82). Give every `img` `width` and `height` to avoid layout shift, `loading="lazy"` below the hero and `fetchpriority="high"` on the hero.
 - A capture script regenerates the whole set when the UI changes, so nobody hand-crops. It starts the app in a sample-data mode, freezes the clock, and walks each view in both themes.
 
@@ -816,7 +917,7 @@ The brand assets in [`brand/`](brand/) come from [`@rtorcato/brand-kit`](https:/
 
 ## Tokens
 
-The theme is shadcn's `neutral` base, unchanged. On top of it there are three status tokens (`--success`, `--warning`, `--info`) and re-stepped `--chart-1..3`. shadcn's default chart colors change hue between themes, so these keep "opened" blue and "merged" orange in both themes, and the pair passes a colorblind check. The honey brand accent stays out of the UI, because amber means "waiting on you".
+The Obsidian redesign (see its Tokens) replaces the `.dark` base colours and adds `--series-*`, `--faint`, `--chip`, `--grid` and `--destructive-foreground`. The `:root` values below are no longer used, since the app is dark only. The theme is shadcn's `neutral` base, unchanged. On top of it there are three status tokens (`--success`, `--warning`, `--info`) and re-stepped `--chart-1..3`. shadcn's default chart colors change hue between themes, so these keep "opened" blue and "merged" orange in both themes, and the pair passes a colorblind check. The honey brand accent stays out of the UI, because amber means "waiting on you".
 
 Merge these into `src/app/globals.css`. Values not listed keep the shadcn defaults.
 
@@ -882,4 +983,4 @@ Merge these into `src/app/globals.css`. Values not listed keep the shadcn defaul
 
 ### Type
 
-Use Geist for UI text and Geist Mono for code-like values, with Tailwind's default scale: page title `text-2xl font-semibold`, section heading `text-lg font-semibold`, card title `font-semibold leading-none`, stat value `text-3xl font-semibold tracking-tight tabular-nums`, body and descriptions `text-sm`, badges and meta `text-xs`, and code-like values `font-mono text-[13px]`.
+Use Inter for UI text (`cv11`, `ss01`) and JetBrains Mono for code-like values (keys, repos, npubs), replacing Geist and Geist Mono (Obsidian redesign). All numbers are `tabular-nums`. Page title 28px bold at −0.025em, KPI value 30px bold at −0.03em. Otherwise Tailwind's default scale: section heading `text-lg font-semibold`, card title `font-semibold leading-none`, stat value `text-3xl font-semibold tracking-tight tabular-nums`, body and descriptions `text-sm`, badges and meta `text-xs`, and code-like values `font-mono text-[13px]`.
