@@ -51,6 +51,7 @@ import {
   historyEnabled,
   listEvents,
   prEvents,
+  retentionDays,
 } from "@/lib/history";
 import { type Agent, type Hive, loadHive } from "@/lib/hive";
 import { githubRows } from "@/lib/ingest";
@@ -155,9 +156,10 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
     : (github?.prs ?? []).flatMap((p) =>
         p.mergedAt !== null && p.mergedAt >= from ? [p.mergedAt] : [],
       );
-  const mergedPrev = reads.prs
-    ? mergedIn(reads.prs, prevFrom, from).length
-    : null;
+  const mergedPrev =
+    reads.prs && reads.prevKept
+      ? mergedIn(reads.prs, prevFrom, from).length
+      : null;
   const medianMerge = reads.prs
     ? median(
         mergedIn(reads.prs, from, now + 1).map(
@@ -353,6 +355,11 @@ type HistoryReads = {
   weekHour: number[][] | null;
   live: Row[] | null;
   failing: string[];
+  /**
+   * False when the previous period reaches past HISTORY_RETENTION_DAYS: the
+   * store has pruned it, so a delta would compare against nothing.
+   */
+  prevKept: boolean;
 };
 
 // Every store read the Overview makes. A failed read leaves its section out,
@@ -377,6 +384,7 @@ async function readHistory(o: {
     weekHour: null,
     live: null,
     failing: [],
+    prevKept: o.prevFrom >= o.now - retentionDays() * DAY_S,
   };
   const date = (s: number) => new Date(s * 1000);
   const starts = bucketsFor(o.range, date(o.now)).starts;
@@ -409,7 +417,7 @@ async function readHistory(o: {
         at: d.day.getTime() / 1000,
         value: d.count,
       }));
-      out.messagesPrev = prev;
+      out.messagesPrev = out.prevKept ? prev : null;
     });
     attempt("PRs", async () => {
       out.prs = toPrs(await prEvents(date(o.prevFrom - 30 * DAY_S)));
@@ -450,7 +458,7 @@ async function readHistory(o: {
       );
       out.cost = {
         total: upToNow,
-        prev: sincePrev - upToNow,
+        prev: out.prevKept ? sincePrev - upToNow : null,
         series: sumInto(
           sparkStarts,
           rows
