@@ -4,6 +4,7 @@ import { ingestTokenRecord, signerRecord } from "./cost-source";
 import {
   type FailingAgent,
   failingAgents,
+  type HealthBucket,
   type HealthSource,
   SLOT_S,
   SOURCE_KINDS,
@@ -33,4 +34,21 @@ export async function loadFailing(
     SOURCE_KINDS[source],
   );
   return { source, failing: failingAgents(buckets, now) };
+}
+
+/**
+ * The buckets of the last `hours`, for silence: [] without a source. Outside a
+ * request the caller passes the source in.
+ */
+export async function recentBuckets(
+  now: number,
+  hours: number,
+  given?: HealthSource | null,
+): Promise<HealthBucket[]> {
+  const source = given === undefined ? await healthSource() : given;
+  if (!source) return [];
+  return healthBuckets(
+    new Date((now - hours * 3600 - SLOT_S) * 1000),
+    SOURCE_KINDS[source],
+  );
 }

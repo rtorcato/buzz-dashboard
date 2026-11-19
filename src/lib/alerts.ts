@@ -4,7 +4,7 @@ import { z } from "zod";
 // history store. Every alert is a Needs you item the owner hasn't cleared yet,
 // so the rules read the same rows the card shows.
 
-export const CHANNEL_TYPES = ["ntfy", "slack", "webhook"] as const;
+export const CHANNEL_TYPES = ["ntfy", "slack", "webhook", "buzz"] as const;
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
 
 export const RULE_IDS = [
@@ -29,8 +29,8 @@ type RuleMeta = {
   repeat: string;
   /**
    * False until Needs you reads the item, so the rule can't fire yet.
-   * ponytail: flip each one as its row lands (ai-blocked issues, release
-   * approvals, silent claims, cost over budget).
+   * ponytail: flip each one as its row lands (ai-blocked issues, silent
+   * claims, cost over budget).
    */
   watched: boolean;
 };
@@ -53,7 +53,7 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: (h) => `No turn for ${h}h`,
     repeatMin: null,
     repeat: "Once",
-    watched: false,
+    watched: true,
   },
   release: {
     name: "Release waiting for approval",
@@ -62,7 +62,7 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: (h) => `After ${h}h`,
     repeatMin: 240,
     repeat: "Every 4h until stopped",
-    watched: false,
+    watched: true,
   },
   blocked: {
     name: "Issue blocked",
@@ -71,7 +71,7 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: () => "Right away",
     repeatMin: null,
     repeat: "Once",
-    watched: false,
+    watched: true,
   },
   merge: {
     name: "PR ready to merge",
@@ -89,9 +89,12 @@ export const RULES: Record<RuleId, RuleMeta> = {
     when: (usd) => `An agent goes over $${usd} today`,
     repeatMin: 24 * 60,
     repeat: "Once a day",
-    watched: false,
+    watched: true,
   },
 };
+
+/** A Buzz DM channel has no URL: it always goes to the owner (#83). */
+export const BUZZ_TARGET = "buzz-dm";
 
 export const ChannelSchema = z.object({
   id: z.string(),
@@ -167,7 +170,11 @@ export function elide(raw: string): string {
  * a signed-out viewer gets no part of it: not the host, not a path prefix (#85).
  */
 export const shownTarget = (raw: string, signedIn: boolean) =>
-  signedIn ? elide(raw) : "Hidden until you sign in";
+  raw === BUZZ_TARGET
+    ? "A direct message to the owner"
+    : signedIn
+      ? elide(raw)
+      : "Hidden until you sign in";
 
 /** Quiet hours run 10 PM to 8 AM on the server clock. */
 export const isQuietHour = (d: Date) => d.getHours() >= 22 || d.getHours() < 8;
@@ -181,6 +188,11 @@ export type Item = {
   detail: string;
   /** The dashboard view it links to, e.g. "/health". */
   path: string;
+  /**
+   * When the condition began (ms), if the source knows: a rule's hours then
+   * count from it, not from the pass that first saw the item.
+   */
+  since?: number;
 };
 
 /** Per item key: when it first showed (ms) and when it last went out, if ever. */
@@ -267,7 +279,7 @@ export function dueAlerts(
     const rule = ruleOf(config, item.rule);
     if (!rule.on || isMuted(mutes, item.key, now)) continue;
     const waitMs = meta.knob === "hours" ? rule.value * 3_600_000 : 0;
-    if (now - s.first < waitMs) continue;
+    if (now - (item.since ?? s.first) < waitMs) continue;
     if (s.sent !== null) {
       if (meta.repeatMin === null) continue;
       if (now - s.sent < meta.repeatMin * 60_000) continue;

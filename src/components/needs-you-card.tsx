@@ -92,6 +92,7 @@ export function NeedsYouCard({
             can&apos;t say whether anything needs you.
           </p>
         </div>
+        <HeadsUp lines={data.headsUp} />
       </Card>
     );
   }

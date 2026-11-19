@@ -6,6 +6,7 @@ import {
   AlertConfigSchema,
   AlertStateSchema,
   alertRequest,
+  BUZZ_TARGET,
   type Channel,
   type ChannelType,
   channelUrl,
@@ -22,11 +23,20 @@ import {
   ruleOf,
 } from "./alerts";
 import { decryptSecret, encryptSecret, publicOrigin } from "./auth";
+import {
+  dmText,
+  loadDmSetup,
+  openDm,
+  RelayError,
+  sendDmMessage,
+} from "./buzz-dm";
 import { diffLog } from "./cleared-log";
+import { formatUsd } from "./cost";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
-import { loadFailing } from "./health-data";
+import { loadFailing, recentBuckets } from "./health-data";
 import {
+  costByAgentSince,
   getSetting,
   historyEnabled,
   logAcked,
@@ -36,13 +46,24 @@ import {
   setSetting,
   updateSetting,
 } from "./history";
+import { readHive } from "./hive";
 import {
+  blockedItems,
+  blockedKey,
+  budgetKey,
   excludedLabels,
   failingKey,
   failingRow,
+  githubReads,
   MERGE_READY,
   mergeKey,
+  quietAgents,
+  quietLine,
+  releaseKey,
+  silentKey,
 } from "./needs-you";
+import { readReleases } from "./releases";
+import { readStatusFeed } from "./status-feed";
 
 // Alerts (#45), server side: the stored config with its channel URLs
 // encrypted, the sender, and the pass the ingester runs every minute.
@@ -83,17 +104,28 @@ export class AlertInputError extends Error {}
 
 /** Adds a channel, and adds it to every rule that's on. */
 export async function addChannel(type: ChannelType, target: string) {
-  const url = channelUrl(target);
-  if (!url) {
-    throw new AlertInputError(
-      "Use an http(s) URL without a user name or password",
-    );
-  }
   const config = await loadAlerts();
+  let address = BUZZ_TARGET;
+  if (type === "buzz") {
+    // Opt-in, and only with a posting key of its own (#83).
+    const setup = loadDmSetup();
+    if (!setup.ok) throw new AlertInputError(setup.reason);
+    if (config.channels.some((c) => c.type === "buzz")) {
+      throw new AlertInputError("Buzz DM is already set up");
+    }
+  } else {
+    const url = channelUrl(target);
+    if (!url) {
+      throw new AlertInputError(
+        "Use an http(s) URL without a user name or password",
+      );
+    }
+    address = url.toString();
+  }
   const channel: Channel = {
     id: randomUUID().slice(0, 8),
     type,
-    target: url.toString(),
+    target: address,
     on: true,
   };
   const rules: AlertConfig["rules"] = {};
@@ -177,6 +209,34 @@ export async function muteItems(
   });
 }
 
+const DM_KEY = "alert_dm";
+
+/** Sends a DM to the owner, opening the conversation the first time (#83). */
+async function deliverDm(text: string) {
+  const setup = loadDmSetup();
+  if (!setup.ok) throw new Error(setup.reason);
+  const saved = await getSetting(DM_KEY);
+  const known =
+    typeof (saved as { dm?: unknown } | null)?.dm === "string"
+      ? (saved as { dm: string }).dm
+      : null;
+  if (known) {
+    try {
+      return await sendDmMessage(setup, known, text);
+    } catch (err) {
+      // Only a 4xx means the DM is gone (hidden or deleted). A 5xx, timeout
+      // or network error is transient: rethrow so the next run retries it
+      // rather than opening a duplicate DM.
+      if (!(err instanceof RelayError && err.status >= 400 && err.status < 500))
+        throw err;
+      console.error(`Alert: Buzz DM ${known} failed, reopening: ${err}`);
+    }
+  }
+  const dm = await openDm(setup);
+  await setSetting(DM_KEY, { dm });
+  await sendDmMessage(setup, dm, text);
+}
+
 /** Posts one alert to one channel; throws when it doesn't land. */
 export async function deliver(
   channel: Channel,
@@ -187,9 +247,13 @@ export async function deliver(
     path: string | null;
   },
 ) {
+  const origin = publicOrigin();
+  if (channel.type === "buzz") {
+    const link = origin && alert.path ? `${origin}${alert.path}` : null;
+    return deliverDm(dmText({ ...alert, link }));
+  }
   const url = channelUrl(channel.target);
   if (!url) throw new Error("invalid URL");
-  const origin = publicOrigin();
   const req = alertRequest(channel.type, url, {
     ...alert,
     link: origin && alert.path ? `${origin}${alert.path}` : null,
@@ -223,6 +287,7 @@ export async function sendTest(id: string) {
  */
 async function currentItems(
   now: number,
+  config: AlertConfig,
 ): Promise<{ items: Item[]; complete: boolean; down: RuleId[] }> {
   const items: Item[] = [];
   let complete = true;
@@ -245,21 +310,102 @@ async function currentItems(
       });
     }
   }
-  if (!excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS).has(MERGE_READY)) {
+  const budget = ruleOf(config, "budget");
+  if (source && budget.on) {
+    // Today on the server clock (TZ), as the cost chip counts it. The total
+    // resets at midnight, so the item clears and a new day alerts again.
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    for (const { agent, usd } of await costByAgentSince(today)) {
+      if (usd <= budget.value) continue;
+      items.push({
+        rule: "budget",
+        key: budgetKey(agent),
+        title: `${agent} is over $${budget.value} today`,
+        detail: `${formatUsd(usd)} so far today · est.`,
+        path: "/cost",
+      });
+    }
+  }
+  const reads = githubReads(
+    excludedLabels(process.env.NEEDS_YOU_EXCLUDE_LABELS),
+  );
+  const silent = ruleOf(config, "silent");
+  if (reads.length || silent.on) {
     const { github } = await readGitHub();
     if (!github) {
       complete = false;
-      down.push("merge");
+      down.push(...reads, ...(silent.on ? (["silent"] as const) : []));
     }
-    for (const pr of github?.prs ?? []) {
-      if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
-      const key = `${pr.repo.split("/")[1]}#${pr.number}`;
+    if (github && reads.includes("merge")) {
+      for (const pr of github.prs) {
+        if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
+        const key = `${pr.repo.split("/")[1]}#${pr.number}`;
+        items.push({
+          rule: "merge",
+          key: mergeKey(pr),
+          title: `${key} is ready to merge`,
+          detail: pr.title,
+          path: "/pipeline",
+        });
+      }
+    }
+    if (github && reads.includes("blocked")) {
+      for (const item of blockedItems(github)) {
+        const key = `${item.repo.split("/")[1]}#${item.number}`;
+        items.push({
+          rule: "blocked",
+          key: blockedKey(item),
+          title: `${key} is blocked`,
+          detail: item.title,
+          path: "/pipeline",
+        });
+      }
+    }
+    if (github && silent.on) {
+      const hive = await readHive(now);
+      if (!hive) {
+        complete = false;
+        down.push("silent");
+      }
+      const secs = Math.floor(now / 1000);
+      const { feed } = hive ? await readStatusFeed() : { feed: null };
+      // The rule's hours, plus a slot, so the last turn is in the buckets.
+      const buckets = hive
+        ? await recentBuckets(secs, silent.value + 1, source)
+        : [];
+      for (const q of hive ? quietAgents(hive, feed, github, buckets) : []) {
+        // Only once it is due: an item that stayed would block the next one.
+        if (secs - q.since < silent.value * 3600) continue;
+        items.push({
+          rule: "silent",
+          key: silentKey(q.agent),
+          title: `${q.agent} is silent while holding a claim`,
+          detail: quietLine(q, secs),
+          path: "/health",
+          since: q.since * 1000,
+        });
+      }
+    }
+  }
+  const { releases } = process.env.GITHUB_TOKEN
+    ? await readReleases()
+    : { releases: null };
+  if (process.env.GITHUB_TOKEN && !releases) {
+    complete = false;
+    down.push("release");
+  }
+  for (const r of releases?.repos ?? []) {
+    for (const run of r.waiting) {
       items.push({
-        rule: "merge",
-        key: mergeKey(pr),
-        title: `${key} is ready to merge`,
-        detail: pr.title,
-        path: "/pipeline",
+        rule: "release",
+        key: releaseKey(r.repo, run.id),
+        title: `${r.repo.split("/")[1]} is waiting for release approval`,
+        detail: `${run.workflow} run #${run.number}`,
+        path: "/releases",
+        // The rule's hours count from when the run started waiting, not
+        // from when this pass first saw it (a restart would reset that).
+        since: run.createdAt * 1000,
       });
     }
   }
@@ -296,7 +442,7 @@ export async function runAlerts(now = Date.now()) {
   const config = await loadAlerts();
   const on = config.channels.some((c) => c.on);
   // The cleared log (#88) records every pass, channels or not.
-  const { items, complete, down } = await currentItems(now);
+  const { items, complete, down } = await currentItems(now, config);
   const before = await loadMutes();
   await recordCleared(items, down, before, now);
   // Acks still have to drop when their item clears, channels or not.

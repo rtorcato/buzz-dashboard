@@ -21,7 +21,8 @@ const BodySchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("add"),
     type: z.enum(CHANNEL_TYPES),
-    target: z.string().max(2000),
+    // A Buzz DM channel has no target; the server fills it in.
+    target: z.string().max(2000).default(""),
   }),
   z.object({ op: z.literal("toggle"), id: z.string(), on: z.boolean() }),
   z.object({ op: z.literal("remove"), id: z.string() }),

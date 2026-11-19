@@ -9,3 +9,10 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@rtorcato/react-common@1.0.0-beta.2'
 verifyDepsBeforeRun: install
+
+# Security overrides for transitive deps (rtorcato/buzz-dashboard#131).
+overrides:
+  '@docusaurus/core>tinypool': ^2.1.2
+  '@esbuild-kit/core-utils>esbuild': ^0.25.0
+  serialize-javascript@<7.0.5: ^7.0.5
+  sockjs>uuid: ^11.1.1

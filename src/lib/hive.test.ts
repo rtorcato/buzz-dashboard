@@ -344,15 +344,19 @@ describe("getHive", () => {
 
   it("pages profiles past the cap, counting events the relay dropped", async () => {
     queryRelay.mockReset();
-    const prof = (pk: string, created_at: number) => ({
-      ...profile(pk, pk),
+    // Only the profiles the test inspects carry an attestation. Signing and
+    // verifying ~1000 of them took seconds and timed this test out on CI.
+    const prof = (pk: string, created_at: number, attested = true) => ({
+      ...(attested
+        ? profile(pk, pk)
+        : ev(0, pk, created_at, JSON.stringify({ display_name: pk }))),
       id: pk,
       created_at,
     });
     // A full page of 1000 where one forged event was dropped: 999 survive.
     const page1 = Object.assign(
       Array.from({ length: 999 }, (_, i) =>
-        prof(`p${i}`, i === 998 ? at(3, 10) : at(7, 9)),
+        i === 998 ? prof(`p${i}`, at(3, 10)) : prof(`p${i}`, at(7, 9), false),
       ),
       { received: 1000 },
     );
