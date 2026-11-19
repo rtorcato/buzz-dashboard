@@ -12,6 +12,7 @@ import { z } from "zod";
 export const SETTINGS_KEY = "hive.settings.v1";
 
 export const VIEWS = [
+  "overview",
   "agents",
   "pipeline",
   "releases",
@@ -61,7 +62,7 @@ export const DEFAULTS: Settings = {
   timeZone: "local",
   refresh: "1m",
   quietAfterMinutes: 120,
-  openOn: "agents",
+  openOn: "overview",
   agentFilter: "all",
   agentSort: "attention",
   pinned: [],
