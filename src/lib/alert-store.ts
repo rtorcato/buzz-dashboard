@@ -30,6 +30,7 @@ import {
   RelayError,
   sendDmMessage,
 } from "./buzz-dm";
+import { diffLog } from "./cleared-log";
 import { formatUsd } from "./cost";
 import { loadIngestTokenRecord, loadSignerRecord } from "./cost-source";
 import { readGitHub } from "./github";
@@ -38,6 +39,10 @@ import {
   costByAgentSince,
   getSetting,
   historyEnabled,
+  logAcked,
+  logAppeared,
+  logCleared,
+  openLogRows,
   setSetting,
   updateSetting,
 } from "./history";
@@ -283,9 +288,10 @@ export async function sendTest(id: string) {
 async function currentItems(
   now: number,
   config: AlertConfig,
-): Promise<{ items: Item[]; complete: boolean }> {
+): Promise<{ items: Item[]; complete: boolean; down: RuleId[] }> {
   const items: Item[] = [];
   let complete = true;
+  const down: RuleId[] = [];
   const source = (await loadSignerRecord())
     ? "signer"
     : (await loadIngestTokenRecord())
@@ -327,7 +333,10 @@ async function currentItems(
   const silent = ruleOf(config, "silent");
   if (reads.length || silent.on) {
     const { github } = await readGitHub();
-    if (!github) complete = false;
+    if (!github) {
+      complete = false;
+      down.push(...reads, ...(silent.on ? (["silent"] as const) : []));
+    }
     if (github && reads.includes("merge")) {
       for (const pr of github.prs) {
         if (pr.closedAt !== null || !pr.labels.includes(MERGE_READY)) continue;
@@ -355,7 +364,10 @@ async function currentItems(
     }
     if (github && silent.on) {
       const hive = await readHive(now);
-      if (!hive) complete = false;
+      if (!hive) {
+        complete = false;
+        down.push("silent");
+      }
       const secs = Math.floor(now / 1000);
       const { feed } = hive ? await readStatusFeed() : { feed: null };
       // The rule's hours, plus a slot, so the last turn is in the buckets.
@@ -379,7 +391,10 @@ async function currentItems(
   const { releases } = process.env.GITHUB_TOKEN
     ? await readReleases()
     : { releases: null };
-  if (process.env.GITHUB_TOKEN && !releases) complete = false;
+  if (process.env.GITHUB_TOKEN && !releases) {
+    complete = false;
+    down.push("release");
+  }
   for (const r of releases?.repos ?? []) {
     for (const run of r.waiting) {
       items.push({
@@ -394,16 +409,44 @@ async function currentItems(
       });
     }
   }
-  return { items, complete };
+  return { items, complete, down };
+}
+
+/** Logs which items appeared, got acked or cleared since the last pass (#88). */
+async function recordCleared(
+  items: Item[],
+  down: RuleId[],
+  mutes: Mutes,
+  now: number,
+) {
+  try {
+    const { appeared, cleared, acked } = diffLog(
+      await openLogRows(),
+      items,
+      mutes,
+      down,
+    );
+    await logAppeared(appeared, now);
+    await logAcked(acked);
+    await logCleared(cleared, now);
+  } catch (err) {
+    // The log is a nicety; it must never stop an alert going out.
+    console.error(`Cleared log: ${err}`);
+  }
 }
 
 /** One alerts pass: sends what is due and remembers what went out. */
 export async function runAlerts(now = Date.now()) {
+  // No database, no alerts and no log.
+  if (!historyEnabled()) return;
   const config = await loadAlerts();
   const on = config.channels.some((c) => c.on);
+  // The cleared log (#88) records every pass, channels or not.
+  const { items, complete, down } = await currentItems(now, config);
+  const before = await loadMutes();
+  await recordCleared(items, down, before, now);
   // Acks still have to drop when their item clears, channels or not.
-  if (!on && !Object.keys(await loadMutes()).length) return;
-  const { items, complete } = await currentItems(now, config);
+  if (!on && !Object.keys(before).length) return;
   // Prune under the key's lock, so a snooze saved meanwhile isn't overwritten.
   const mutes = await updateSetting(MUTE_KEY, (raw) =>
     liveMutes(toMutes(raw), complete ? items.map((i) => i.key) : null, now),

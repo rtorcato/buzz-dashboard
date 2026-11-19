@@ -1,4 +1,5 @@
 import {
+  boolean,
   doublePrecision,
   index,
   integer,
@@ -123,3 +124,27 @@ export const settings = pgTable("settings", {
     .notNull(),
   hive: hive(),
 });
+
+// Needs you cleared-items log (#88): when each alert item appeared and when it
+// cleared, written by the alerts pass. Feeds the card footer's weekly stats
+// and the History table. An item that comes back gets a new row.
+export const needsYouLog = pgTable(
+  "needs_you_log",
+  {
+    /** The alert item key, e.g. "failing:Gale" or "merge:repo#12". */
+    key: text("key").notNull(),
+    /** The alert rule: "failing" or "merge" so far. */
+    rule: text("rule").notNull(),
+    title: text("title").notNull(),
+    appearedAt: timestamp("appeared_at", { withTimezone: true }).notNull(),
+    /** Null while the item is still showing. */
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
+    /** The owner acked it (snooze until it changes) before it cleared. */
+    acked: boolean("acked").notNull().default(false),
+    hive: hive(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.appearedAt] }),
+    index("needs_you_log_cleared_idx").on(t.clearedAt),
+  ],
+);
