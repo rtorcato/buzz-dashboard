@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { SETUP_COOKIE, setupOpen, setupSessionLeft } from "@/lib/setup";
 
 // DESIGN.md → Setup wizard (#73). No sidebar: a 56px bar, then the gate, then
-// the five steps (steps 1 and 2 so far). Never served once the relay settings exist.
+// the five steps. Never served once the relay settings exist.
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {

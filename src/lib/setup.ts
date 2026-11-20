@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { mergeConfig, readSavedConfig } from "./config-store";
+import { readSavedConfig } from "./config-store";
 
 // First-run setup gate (#73, DESIGN.md → Setup wizard → The gate). The token
 // lives in memory only: it is printed to the logs at start, works for 60
@@ -26,13 +26,17 @@ type State = {
 };
 const g = globalThis as { __hiveSetup?: State };
 
-/** Setup is served until all four relay settings exist, env or saved. */
+/**
+ * Setup is served until Finish saves SETUP_DONE, or until the env file alone
+ * sets all four relay settings. Saved relay settings do not close it: the
+ * wizard saves them before the optional steps and Finish.
+ */
 export function setupOpen(
   env: Record<string, string | undefined> = process.env,
   saved = readSavedConfig(),
 ): boolean {
-  const merged = mergeConfig(env, saved);
-  return !RELAY_KEYS.every((k) => merged[k]);
+  if (saved.SETUP_DONE === "1") return false;
+  return !RELAY_KEYS.every((k) => env[k]);
 }
 
 function groups(hex: string) {

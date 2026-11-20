@@ -58,3 +58,15 @@ export function ensureDashboardKey(path = configPath()): string {
     "hex",
   );
 }
+
+// Puts saved values into process.env where the env has none, so the readers
+// that look at process.env (GitHub, media, history) see them. Env wins. Only
+// once setup is finished: while it is open, saved relay keys in process.env
+// would read as the env file setting them and close setup early.
+export function applySavedConfig(
+  env: Record<string, string | undefined> = process.env,
+  saved: SavedConfig = readSavedConfig(),
+): void {
+  if (saved.SETUP_DONE !== "1") return;
+  for (const [k, v] of Object.entries(saved)) if (!env[k]) env[k] = v;
+}
