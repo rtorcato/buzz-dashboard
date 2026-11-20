@@ -86,6 +86,12 @@ const HIVE_TABLES = [
   "agent_events",
   "needs_you_log",
   "settings",
+  // #166: NOT NULL and in every key, so the default only saves naming it.
+  "projects",
+  "project_repos",
+  "channel_assignments",
+  "project_agents",
+  "registry_revisions",
 ];
 
 /**

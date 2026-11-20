@@ -43,6 +43,13 @@
       "when": 1794964543526,
       "tag": "0005_needs_you_log",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795202769199,
+      "tag": "0006_projects",
+      "breakpoints": true
     }
   ]
 }
