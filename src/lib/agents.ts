@@ -5,7 +5,10 @@ import type { Runtime } from "./status-feed";
 const ACTIVE_WITHIN_S = 15 * 60;
 const QUIET_AFTER_S = 2 * 3600;
 
-export type AgentStatus = "stopped" | "active" | "idle" | "quiet";
+export type AgentStatus = "stopped" | "active" | "idle" | "quiet" | "elsewhere";
+
+/** Unreadable channel names by agent name: where an agent may be working unseen. */
+export type Elsewhere = Record<string, string[]>;
 
 /** Runtime per agent name; a name with no entry is not reported. */
 export type Runtimes = Record<string, Runtime>;
@@ -34,11 +37,19 @@ export function agentStatus(
   now: number,
   runtime?: Runtime,
   quietAfterS = QUIET_AFTER_S,
+  unreadable: string[] = [],
 ): AgentStatus {
   if (runtime?.state === "stopped") return "stopped";
   const since = now - (agent.lastSeenAt ?? 0);
   if (since <= ACTIVE_WITHIN_S) return "active";
-  return since > quietAfterS ? "quiet" : "idle";
+  if (since <= quietAfterS) return "idle";
+  // No readable message for a while. If the runtime says the agent is working
+  // and it belongs to a channel the dashboard can't read, say so rather than
+  // call it Quiet (#168). Without runtime evidence it stays Quiet.
+  const working =
+    runtime?.state === "running" ||
+    (runtime?.lastTurn != null && now - runtime.lastTurn <= quietAfterS);
+  return unreadable.length > 0 && working ? "elsewhere" : "quiet";
 }
 
 /** URL segment for an agent: "Optimus Prime" → "optimus-prime". */
@@ -81,6 +92,7 @@ export function sortAgents(
   now: number,
   runtimes: Runtimes = {},
   quietAfterS = QUIET_AFTER_S,
+  elsewhere: Elsewhere = {},
 ): Agent[] {
   if (sort === "name") {
     return agents.toSorted((a, b) => a.name.localeCompare(b.name));
@@ -89,8 +101,8 @@ export function sortAgents(
   // Needs attention: quiet agents first, longest quiet first, then the rest
   // most recent first, and parked (stopped) agents last.
   const rank = (a: Agent) =>
-    ({ quiet: 0, active: 1, idle: 1, stopped: 2 })[
-      agentStatus(a, now, runtimes[a.name], quietAfterS)
+    ({ quiet: 0, elsewhere: 1, active: 1, idle: 1, stopped: 2 })[
+      agentStatus(a, now, runtimes[a.name], quietAfterS, elsewhere[a.name])
     ];
   return agents.toSorted((a, b) => {
     const ra = rank(a);
@@ -105,16 +117,18 @@ export function agentStats(
   now: number,
   runtimes: Runtimes = {},
   quietAfterS = QUIET_AFTER_S,
+  elsewhere: Elsewhere = {},
 ) {
+  const status = (a: Agent) =>
+    agentStatus(a, now, runtimes[a.name], quietAfterS, elsewhere[a.name]);
   const quiet = sortAgents(
     agents,
     "attention",
     now,
     runtimes,
     quietAfterS,
-  ).filter(
-    (a) => agentStatus(a, now, runtimes[a.name], quietAfterS) === "quiet",
-  );
+    elsewhere,
+  ).filter((a) => status(a) === "quiet");
   const today = agents.reduce((n, a) => n + a.messagesToday, 0);
   // The six full days before today.
   const before =
@@ -127,9 +141,7 @@ export function agentStats(
     stopped: agents
       .filter((a) => runtimes[a.name]?.state === "stopped")
       .map((a) => a.name),
-    active: agents.filter(
-      (a) => agentStatus(a, now, runtimes[a.name], quietAfterS) === "active",
-    ).length,
+    active: agents.filter((a) => status(a) === "active").length,
     quiet: quiet.map((a) => a.name),
     today,
     // Percent vs the 7-day average, or null with no history to compare.

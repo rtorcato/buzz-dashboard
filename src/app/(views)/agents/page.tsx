@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { AgentsView } from "@/components/agents-view";
 import { type Runtimes, runtimeFor } from "@/lib/agents";
+import { loadChannelMap } from "@/lib/channel-map";
+import { unreadableByAgent } from "@/lib/channels";
 import { loadHive } from "@/lib/hive";
 import { loadRequestScope } from "@/lib/project-data";
 import { agentInScope } from "@/lib/project-scope";
@@ -11,11 +13,13 @@ export const metadata: Metadata = { title: "Agents · Hive" };
 export default async function AgentsPage({
   searchParams,
 }: PageProps<"/agents">) {
-  const [{ hive }, { feed, stale }, { scope, projects }] = await Promise.all([
-    loadHive(),
-    loadStatusFeed(),
-    searchParams.then(loadRequestScope),
-  ]);
+  const [{ hive }, { feed, stale }, { map }, { scope, projects }] =
+    await Promise.all([
+      loadHive(),
+      loadStatusFeed(),
+      loadChannelMap(),
+      searchParams.then(loadRequestScope),
+    ]);
   // The layout already shows the relay's Alert.
   if (!hive) return null;
   // One card per rostered agent; a silent one gets the Quiet badge.
@@ -49,6 +53,7 @@ export default async function AgentsPage({
       runtimes={runtimes}
       alsoIn={alsoIn}
       feed={feed && { publishedAt: feed.publishedAt, stale }}
+      elsewhere={map ? unreadableByAgent(map.rows) : {}}
     />
   );
 }

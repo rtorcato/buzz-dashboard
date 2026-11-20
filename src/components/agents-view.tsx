@@ -5,6 +5,7 @@ import {
   CircleCheck,
   CircleHelp,
   ClockAlert,
+  EyeOff,
   type LucideIcon,
   MessageSquare,
   Moon,
@@ -28,6 +29,7 @@ import {
   agentSlug,
   agentStats,
   agentStatus,
+  type Elsewhere,
   morphName,
   type Runtimes,
   SORTS,
@@ -51,6 +53,11 @@ const STATUS: Record<
     label: "Active",
     icon: CircleCheck,
     tone: "border-success/25 bg-success/10 text-success",
+  },
+  elsewhere: {
+    label: "Active elsewhere",
+    icon: EyeOff,
+    tone: "border-info/25 bg-info/10 text-info",
   },
   idle: {
     label: "Idle",
@@ -80,12 +87,15 @@ export function AgentsView({
   now,
   runtimes,
   feed,
+  elsewhere = {},
   alsoIn = {},
 }: {
   agents: Agent[];
   now: number;
   runtimes: Runtimes;
   feed: FeedInfo;
+  /** Unreadable channels by agent name (#168), newest first. */
+  elsewhere?: Elsewhere;
   /** With a project picked (#167): the other projects an agent is in. */
   alsoIn?: Record<string, string[]>;
 }) {
@@ -96,20 +106,35 @@ export function AgentsView({
   const filter = filterPick ?? settings.agentFilter;
   const sort = sortPick ?? settings.agentSort;
   const quietAfterS = settings.quietAfterMinutes * 60;
-  const stats = agentStats(agents, now, runtimes, quietAfterS);
+  const stats = agentStats(agents, now, runtimes, quietAfterS, elsewhere);
   // Hidden agents leave this view but still count in the stats and Needs you.
   // Pinned ones go first, keeping the sort order within each group.
-  const sorted = sortAgents(agents, sort, now, runtimes, quietAfterS).filter(
-    (a) => !settings.hidden.includes(a.name),
-  );
+  const sorted = sortAgents(
+    agents,
+    sort,
+    now,
+    runtimes,
+    quietAfterS,
+    elsewhere,
+  ).filter((a) => !settings.hidden.includes(a.name));
   const shown = [
     ...sorted.filter((a) => settings.pinned.includes(a.name)),
     ...sorted.filter((a) => !settings.pinned.includes(a.name)),
-  ].filter(
-    (a) =>
+  ].filter((a) => {
+    const status = agentStatus(
+      a,
+      now,
+      runtimes[a.name],
+      quietAfterS,
+      elsewhere[a.name],
+    );
+    // Active elsewhere is a kind of active: the agent is working, unseen.
+    return (
       filter === "all" ||
-      agentStatus(a, now, runtimes[a.name], quietAfterS) === filter,
-  );
+      status === filter ||
+      (filter === "active" && status === "elsewhere")
+    );
+  });
   const sortItems = Object.entries(SORTS).map(([value, label]) => ({
     value,
     label: `Sort: ${label}`,
@@ -238,6 +263,7 @@ export function AgentsView({
               runtime={runtimes[a.name]}
               feed={feed}
               quietAfterS={quietAfterS}
+              unreadable={elsewhere[a.name] ?? []}
               alsoIn={alsoIn[a.name]}
             />
           ))}
@@ -282,6 +308,7 @@ function AgentCard({
   runtime,
   feed,
   quietAfterS,
+  unreadable,
   alsoIn,
 }: {
   agent: Agent;
@@ -289,9 +316,10 @@ function AgentCard({
   runtime?: Runtime;
   feed: FeedInfo;
   quietAfterS: number;
+  unreadable: string[];
   alsoIn?: string[];
 }) {
-  const status = agentStatus(a, now, runtime, quietAfterS);
+  const status = agentStatus(a, now, runtime, quietAfterS, unreadable);
   const ago = a.lastSeenAt ? formatAge((now - a.lastSeenAt) * 1000) : null;
   const quiet = status === "quiet";
 
@@ -323,12 +351,29 @@ function AgentCard({
           feed={feed}
           lastSeenAt={a.lastSeenAt}
         />
-        <div className="mt-3 rounded-md bg-muted/60 px-3 py-2">
-          <p className="text-xs text-muted-foreground">Working on</p>
-          <p className="truncate text-sm font-medium" title={a.workingOn ?? ""}>
-            {a.workingOn ?? "No messages this week"}
-          </p>
-        </div>
+        {status === "elsewhere" ? (
+          <div className="mt-3 rounded-md bg-muted/60 px-3 py-2">
+            <p className="text-sm">
+              Active in a channel this dashboard can&apos;t read.
+            </p>
+            <p
+              className="truncate text-xs text-muted-foreground"
+              title={unreadable.map((c) => `#${c}`).join(", ")}
+            >
+              Member of {unreadable.map((c) => `#${c}`).join(", ")}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-3 rounded-md bg-muted/60 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Working on</p>
+            <p
+              className="truncate text-sm font-medium"
+              title={a.workingOn ?? ""}
+            >
+              {a.workingOn ?? "No messages this week"}
+            </p>
+          </div>
+        )}
         <div className="mt-4 flex items-end justify-between gap-3">
           <div className="min-w-0 text-sm text-muted-foreground">
             <p>
