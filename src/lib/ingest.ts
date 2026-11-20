@@ -23,6 +23,7 @@ import {
   type NewHistoryEvent,
 } from "./history-schema";
 import { getHive, queryAll } from "./hive";
+import { seedRegistryOnce } from "./registry-seed";
 import type { NostrEvent } from "./relay";
 import { sampleMode } from "./sample-data";
 import {
@@ -370,6 +371,15 @@ export async function startHistory() {
     try {
       await migrateOnce();
       await ingestOnce();
+      // The project registry's first seed (#166), after ingest so repos with
+      // activity are stored. Its own catch: a relay hiccup here isn't an
+      // ingest failure.
+      try {
+        const made = await seedRegistryOnce();
+        if (made) console.log(`Project registry: seeded ${made} projects.`);
+      } catch (err) {
+        console.error(`Project registry seed: ${message(err)}`);
+      }
     } catch (err) {
       console.error(`History ingest failed: ${message(err)}`);
     } finally {

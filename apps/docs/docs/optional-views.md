@@ -92,3 +92,11 @@ The feed is optional. Without it the dashboard still runs, and the runtime row s
 - [Alerts](./alerts.md) and snoozing Needs-you rows.
 
 On start the server applies its migrations, then stores GitHub and Buzz events every minute and deletes those older than `HISTORY_RETENTION_DAYS` (90 by default). Without `DATABASE_URL` the dashboard stays live-only and never opens a connection. Health and Cost also need a [cost source](./cost-source.md).
+
+### Projects
+
+The history store also holds the project registry. A project links one or more GitHub repos, the Buzz channels that belong to it, the agents that work it, and its release model. A channel can instead be hive-wide, or left unassigned.
+
+The first time the store has activity, the dashboard seeds one project per `GITHUB_OWNERS` repo with stored events. A channel with the repo's name becomes the project's home channel, and that channel's agent members join the project. After that, only the owner changes the registry. Each change is a signed edit, kept with its signature in the registry's change log. Seeding never runs again once the hive has a project, so it never overwrites the owner's edits.
+
+The migration that adds the registry is additive. To remove its tables, follow `drizzle/rollback/0006_projects_down.sql`, which is never run automatically.
