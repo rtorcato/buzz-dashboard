@@ -209,6 +209,34 @@ export async function listChannelAssignments(
   }));
 }
 
+/**
+ * The newest logged revision of each channel's assignment (#169). An
+ * unassigned channel has no row in channel_assignments, but its next signed
+ * assignment still has to name the last revision the log holds.
+ */
+export async function channelRevisions(
+  hive: string,
+): Promise<Record<string, number>> {
+  const rows = await historyDb()
+    .select({
+      channelId: registryRevisions.channelId,
+      revision: sql<number>`max(${registryRevisions.revision})`,
+    })
+    .from(registryRevisions)
+    .where(
+      and(
+        eq(registryRevisions.hive, hive),
+        isNotNull(registryRevisions.channelId),
+      ),
+    )
+    .groupBy(registryRevisions.channelId);
+  return Object.fromEntries(
+    rows.flatMap((r) =>
+      r.channelId ? [[r.channelId, Number(r.revision)]] : [],
+    ),
+  );
+}
+
 /** The newest signed edits, for "who changed what"; one project's with a slug. */
 export async function listRevisions(
   hive: string,

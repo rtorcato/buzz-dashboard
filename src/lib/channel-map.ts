@@ -7,7 +7,11 @@ import { buildChannelMap, type ChannelMap } from "./channels";
 import { readServerEnv } from "./env";
 import { historyEnabled } from "./history";
 import { type Hive, loadHive, queryAll } from "./hive";
-import { listChannelAssignments, listProjects } from "./project-store";
+import {
+  channelRevisions,
+  listChannelAssignments,
+  listProjects,
+} from "./project-store";
 import { hiveOf } from "./projects";
 import { sampleChannelMap, sampleMode } from "./sample-data";
 
@@ -48,12 +52,14 @@ export const loadChannelMap = cache(async (): Promise<ChannelMapResult> => {
     // channels, members and readability, just no project column.
     let assignments = null;
     let projects: Awaited<ReturnType<typeof listProjects>> = [];
+    let revisions: Record<string, number> = {};
     const key = hiveOf(env.buzzRelayUrl);
     if (historyEnabled() && key) {
       try {
-        [assignments, projects] = await Promise.all([
+        [assignments, projects, revisions] = await Promise.all([
           listChannelAssignments(key),
           listProjects(key, { archived: true }),
+          channelRevisions(key),
         ]);
       } catch (err) {
         console.error("Channels, registry:", err);
@@ -67,6 +73,7 @@ export const loadChannelMap = cache(async (): Promise<ChannelMapResult> => {
         projects,
         agents: hive.agents,
         lastMessageByName: lastMessageByName(hive),
+        revisions,
       }),
     };
   } catch (err) {

@@ -22,6 +22,8 @@ export type ChannelMember = {
 export type ChannelRow = {
   id: string;
   name: string;
+  /** The relay's `about`, or "". */
+  description: string;
   /** Private channels show a lock; open ones a #. */
   isPrivate: boolean;
   archived: boolean;
@@ -34,6 +36,8 @@ export type ChannelRow = {
   members: ChannelMember[];
   /** Unix seconds of the newest message the relay returned, or null. */
   lastMessageAt: number | null;
+  /** The assignment's revision, the base for the next signed one (#169). */
+  revision: number;
 };
 
 export type ChannelMap = {
@@ -42,6 +46,8 @@ export type ChannelMap = {
   registry: boolean;
   /** Projects that have a channel, for the filter. */
   projects: ChannelProject[];
+  /** Every live project, for assigning a channel (#169). */
+  choices: ChannelProject[];
 };
 
 export type ChannelAssignmentInput = {
@@ -50,6 +56,7 @@ export type ChannelAssignmentInput = {
   /** The project's slug for a project channel. */
   project: string | null;
   home: boolean;
+  revision?: number;
 };
 
 const tag = (event: NostrEvent, name: string) =>
@@ -83,17 +90,20 @@ export function buildChannelMap({
   projects,
   agents,
   lastMessageByName,
+  revisions = {},
 }: {
   events: NostrEvent[];
   /** The dashboard identity's hex pubkey. */
   dashboard: string;
   /** Null when the registry isn't available. */
   assignments: ChannelAssignmentInput[] | null;
-  projects: ChannelProject[];
+  projects: (ChannelProject & { archivedAt?: string | null })[];
   /** The hive's agents, to name members. */
   agents: { name: string; picture: string | null; pubkeys: string[] }[];
   /** Newest message time by channel name, from the hive read. */
   lastMessageByName: Record<string, number>;
+  /** Newest logged assignment revision by channel id, unassigned ones too. */
+  revisions?: Record<string, number>;
 }): ChannelMap {
   const meta = newestByChannel(events, 39000);
   const lists = newestByChannel(events, 39002);
@@ -127,6 +137,7 @@ export function buildChannelMap({
       return {
         id,
         name,
+        description: tag(m, "about") ?? "",
         isPrivate,
         archived: hasTag(m, "archived"),
         readable: !isPrivate || pubkeys.includes(dashboard),
@@ -149,6 +160,7 @@ export function buildChannelMap({
               (x.name ?? x.pubkey).localeCompare(y.name ?? y.pubkey),
           ),
         lastMessageAt: lastMessageByName[name] ?? null,
+        revision: Math.max(a?.revision ?? 0, revisions[id] ?? 0),
       };
     })
     .filter((r): r is ChannelRow => r !== null)
@@ -163,10 +175,16 @@ export function buildChannelMap({
   const used = new Set(
     rows.flatMap((r) => (r.project ? [r.project.slug] : [])),
   );
+  const pick = ({ slug, name, shortLabel }: ChannelProject) => ({
+    slug,
+    name,
+    shortLabel,
+  });
   return {
     rows,
     registry: assignments !== null,
-    projects: projects.filter((p) => used.has(p.slug)),
+    projects: projects.filter((p) => used.has(p.slug)).map(pick),
+    choices: projects.filter((p) => !p.archivedAt).map(pick),
   };
 }
 

@@ -1,7 +1,28 @@
 "use client";
 
-import { Archive, Eye, EyeOff, Hash, Layers, Lock } from "lucide-react";
+import {
+  Archive,
+  Eye,
+  EyeOff,
+  Hash,
+  KeyRound,
+  Layers,
+  Lock,
+  Plus,
+  UserPlus,
+} from "lucide-react";
 import { useState } from "react";
+import {
+  type AdminContext,
+  addDashboardJob,
+  ChannelRowMenu,
+  EditChannelSheet,
+  type EditFocus,
+  NewChannelDialog,
+  SignDialog,
+  type SignJob,
+} from "@/components/channel-admin";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Select,
@@ -31,10 +52,33 @@ const TAB_LABEL: Record<ChannelTab, string> = {
 const ALL_PROJECTS = "all";
 const SHOWN_MEMBERS = 4;
 
+const GRID =
+  "md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1fr)_6.5rem]";
+// With the owner's row menu (#169), one more narrow column.
+const ADMIN_GRID =
+  "md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1fr)_6.5rem_2.5rem]";
+
 // `now` is unix seconds from the server render, so server and client agree.
-export function ChannelsView({ map, now }: { map: ChannelMap; now: number }) {
+// `admin` is set only for the signed-in owner (#169).
+export function ChannelsView({
+  map,
+  now,
+  admin = null,
+}: {
+  map: ChannelMap;
+  now: number;
+  admin?: AdminContext | null;
+}) {
   const [tab, setTab] = useState<ChannelTab>("all");
   const [project, setProject] = useState(ALL_PROJECTS);
+  const [editing, setEditing] = useState<{
+    row: ChannelRow;
+    focus: EditFocus;
+    n: number;
+  } | null>(null);
+  const [creating, setCreating] = useState<number | null>(null);
+  const [job, setJob] = useState<SignJob | null>(null);
+  const grid = admin ? ADMIN_GRID : GRID;
   // Without the registry there is no project to be unassigned from.
   const tabs = CHANNEL_TABS.filter((t) => map.registry || t !== "unassigned");
   const counts = Object.fromEntries(
@@ -49,22 +93,39 @@ export function ChannelsView({ map, now }: { map: ChannelMap; now: number }) {
     (r) => project === ALL_PROJECTS || r.project?.slug === project,
   );
 
+  const unreadable = map.rows.filter(isUnreadable);
+  const edit = (row: ChannelRow, focus: EditFocus) =>
+    setEditing({ row, focus, n: (editing?.n ?? 0) + 1 });
+  // From a form: the form hides while signing, and Back brings it back.
+  const review = (j: SignJob) => setJob({ ...j, back: () => setJob(null) });
+
   return (
     <>
-      <div>
-        <h1 className="text-[28px] leading-9 font-semibold tracking-tight">
-          Channels
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          {map.rows.length} {map.rows.length === 1 ? "channel" : "channels"} ·{" "}
-          {readable} the dashboard can read
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[28px] leading-9 font-semibold tracking-tight">
+            Channels
+          </h1>
+          <p className="mt-1 text-muted-foreground">
+            {map.rows.length} {map.rows.length === 1 ? "channel" : "channels"} ·{" "}
+            {readable} the dashboard can read
+          </p>
+        </div>
+        {admin && (
+          <Button
+            className="h-11 sm:h-9"
+            onClick={() => setCreating((creating ?? 0) + 1)}
+          >
+            <Plus aria-hidden />
+            New channel
+          </Button>
+        )}
       </div>
 
       {counts.unreadable > 0 && (
         <div
           role="status"
-          className="flex gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3"
+          className="flex flex-wrap gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 sm:flex-nowrap"
         >
           <EyeOff className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden />
           <p className="text-sm">
@@ -78,6 +139,16 @@ export function ChannelsView({ map, now }: { map: ChannelMap; now: number }) {
               channel this dashboard can&apos;t read&quot; instead of Quiet.
             </span>
           </p>
+          {admin && (
+            <Button
+              variant="outline"
+              className="ml-auto h-11 shrink-0 self-center sm:h-9"
+              onClick={() => setJob(addDashboardJob(unreadable, admin))}
+            >
+              <UserPlus aria-hidden />
+              Add the dashboard to {unreadable.length}
+            </Button>
+          )}
         </div>
       )}
 
@@ -137,7 +208,7 @@ export function ChannelsView({ map, now }: { map: ChannelMap; now: number }) {
         <Card className="gap-0 overflow-hidden p-0">
           {/* Desktop: a table. Phones: stacked rows (see ChannelRowView). */}
           <div
-            className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1fr)_6.5rem] gap-4 border-b px-5 py-3 text-sm text-muted-foreground md:grid"
+            className={`hidden gap-4 border-b px-5 py-3 text-sm text-muted-foreground md:grid ${grid}`}
             aria-hidden
           >
             <span>Channel</span>
@@ -145,6 +216,7 @@ export function ChannelsView({ map, now }: { map: ChannelMap; now: number }) {
             <span>Members</span>
             <span>Dashboard</span>
             <span className="text-right whitespace-nowrap">Last message</span>
+            {admin && <span />}
           </div>
           <ul className="divide-y">
             {shown.map((r) => (
@@ -153,16 +225,78 @@ export function ChannelsView({ map, now }: { map: ChannelMap; now: number }) {
                 row={r}
                 now={now}
                 registry={map.registry}
+                grid={grid}
+                menu={
+                  admin ? (
+                    <ChannelRowMenu
+                      row={r}
+                      admin={admin}
+                      registry={map.registry}
+                      onEdit={(focus) => edit(r, focus)}
+                      onSign={setJob}
+                    />
+                  ) : null
+                }
               />
             ))}
           </ul>
         </Card>
       )}
 
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Eye className="size-4 shrink-0" aria-hidden />
-        Read-only. Only the hive owner can change channels.
-      </p>
+      {admin ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <KeyRound className="size-4 shrink-0" aria-hidden />
+          Every relay change is signed by your Nostr extension. Messages and
+          threads stay in Buzz Desktop.
+        </p>
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Eye className="size-4 shrink-0" aria-hidden />
+          Read-only. Only the hive owner can change channels.
+        </p>
+      )}
+
+      {admin && editing && (
+        <EditChannelSheet
+          key={`${editing.row.id}:${editing.n}`}
+          row={editing.row}
+          focus={editing.focus}
+          admin={admin}
+          registry={map.registry}
+          projects={map.choices}
+          open={!job}
+          onClose={() => setEditing(null)}
+          onReview={review}
+        />
+      )}
+      {admin && creating !== null && (
+        <NewChannelDialog
+          key={creating}
+          admin={admin}
+          registry={map.registry}
+          projects={map.choices}
+          taken={map.rows.map((r) => r.name.toLowerCase())}
+          open={!job}
+          onClose={() => setCreating(null)}
+          onReview={review}
+        />
+      )}
+      {admin && job && (
+        <SignDialog
+          job={job}
+          admin={admin}
+          onClose={() => {
+            setJob(null);
+            setEditing(null);
+            setCreating(null);
+          }}
+          onDone={() => {
+            setJob(null);
+            setEditing(null);
+            setCreating(null);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -171,15 +305,19 @@ function ChannelRowView({
   row: r,
   now,
   registry,
+  grid,
+  menu,
 }: {
   row: ChannelRow;
   now: number;
   registry: boolean;
+  grid: string;
+  menu: React.ReactNode;
 }) {
   const Icon = r.isPrivate ? Lock : Hash;
   return (
     <li
-      className={`grid grid-cols-1 items-center gap-x-4 gap-y-2 px-5 py-3.5 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1fr)_6.5rem] ${r.archived ? "opacity-70" : ""}`}
+      className={`relative grid grid-cols-1 items-center gap-x-4 gap-y-2 px-5 py-3.5 ${grid} ${r.archived ? "opacity-70" : ""}`}
     >
       <p className="flex min-w-0 items-center gap-2 font-medium">
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -203,6 +341,12 @@ function ChannelRowView({
           <span title="No message in the last 7 days">–</span>
         )}
       </p>
+      {menu && (
+        // Phones: top right of the stacked row.
+        <div className="absolute top-2 right-2 md:static md:justify-self-end">
+          {menu}
+        </div>
+      )}
     </li>
   );
 }

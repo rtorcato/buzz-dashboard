@@ -148,3 +148,51 @@ describe("unreadableByAgent", () => {
     expect(unreadableByAgent(build().rows)).toEqual({ Fern: ["secret"] });
   });
 });
+
+describe("channel admin fields (#169)", () => {
+  it("reads the description from the about tag", () => {
+    const m = build({
+      events: [
+        {
+          ...meta("a", "app"),
+          tags: [
+            ["d", "a"],
+            ["name", "app"],
+            ["about", "Shared config"],
+          ],
+        },
+        meta("b", "general"),
+      ],
+    });
+    expect(row(m, "app").description).toBe("Shared config");
+    expect(row(m, "general").description).toBe("");
+  });
+  it("takes the newer of the assignment's and the log's revision", () => {
+    const m = build({
+      assignments: [
+        {
+          channelId: "a",
+          scope: "project",
+          project: "app",
+          home: true,
+          revision: 3,
+        },
+      ],
+      // b was assigned and then unassigned: only the log remembers it.
+      revisions: { a: 2, b: 5 },
+    });
+    expect(row(m, "app").revision).toBe(3);
+    expect(row(m, "general").revision).toBe(5);
+    expect(row(m, "secret").revision).toBe(0);
+  });
+  it("offers every live project as a choice, used or not", () => {
+    const m = build({
+      projects: [
+        { slug: "app", name: "app", shortLabel: "AP" },
+        { slug: "lib", name: "lib", shortLabel: null },
+        { slug: "gone", name: "gone", shortLabel: null, archivedAt: "2026" },
+      ],
+    });
+    expect(m.choices.map((p) => p.slug)).toEqual(["app", "lib"]);
+  });
+});
