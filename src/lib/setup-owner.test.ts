@@ -21,11 +21,32 @@ describe("checkOwnerTag", () => {
     const tag = tagFor(dash);
     expect(checkOwnerTag(tag, dash)).toEqual({ ok: true, owner, tag });
   });
-  it("rejects a tag signed for another key, bad JSON and bad shapes", () => {
+  it("says other-key for a well-formed proof signed for another key", () => {
     const other = hex(schnorr.getPublicKey(schnorr.utils.randomSecretKey()));
-    expect(checkOwnerTag(tagFor(other), dash).ok).toBe(false);
-    expect(checkOwnerTag("nope", dash).ok).toBe(false);
-    expect(checkOwnerTag('["auth","x"]', dash).ok).toBe(false);
-    expect(checkOwnerTag('["auth","zz","","sig"]', dash).ok).toBe(false);
+    expect(checkOwnerTag(tagFor(other), dash)).toEqual({
+      ok: false,
+      kind: "other-key",
+    });
+  });
+  it("says not-a-proof for text and flags a pasted public key", () => {
+    expect(checkOwnerTag("nope", dash)).toEqual({
+      ok: false,
+      kind: "not-a-proof",
+      looksLikeKey: false,
+    });
+    expect(checkOwnerTag(dash, dash)).toMatchObject({
+      kind: "not-a-proof",
+      looksLikeKey: true,
+    });
+  });
+  it("says rejected for unreadable shapes and bad owner keys", () => {
+    expect(checkOwnerTag('["auth","x"]', dash)).toEqual({
+      ok: false,
+      kind: "rejected",
+    });
+    expect(checkOwnerTag('["auth","zz","","sig"]', dash)).toEqual({
+      ok: false,
+      kind: "rejected",
+    });
   });
 });
