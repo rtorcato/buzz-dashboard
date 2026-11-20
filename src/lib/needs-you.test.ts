@@ -169,6 +169,20 @@ describe("mergeRow", () => {
       count: 2,
       since: "2026-10-15T00:00:00.000Z",
       keys: ["merge:rtorcato/js-common#2", "merge:rtorcato/db-common#7"],
+      items: [
+        {
+          repo: "rtorcato/js-common",
+          label: "js-common#2",
+          at: expect.any(String),
+          key: "merge:rtorcato/js-common#2",
+        },
+        {
+          repo: "rtorcato/db-common",
+          label: "db-common#7",
+          at: "2026-10-15T00:00:00.000Z",
+          key: "merge:rtorcato/db-common#7",
+        },
+      ],
     });
   });
   it("is absent with none", () => {
@@ -200,6 +214,22 @@ describe("blockedRow", () => {
       count: 2,
       since: "2026-10-15T00:00:00.000Z",
       keys: ["blocked:rtorcato/js-common#5", "blocked:rtorcato/db-common#9"],
+      items: [
+        {
+          repo: "rtorcato/js-common",
+          label: "js-common#5",
+          at: expect.any(String),
+          key: "blocked:rtorcato/js-common#5",
+          pr: false,
+        },
+        {
+          repo: "rtorcato/db-common",
+          label: "db-common#9",
+          at: "2026-10-15T00:00:00.000Z",
+          key: "blocked:rtorcato/db-common#9",
+          pr: false,
+        },
+      ],
     });
   });
   it("says item when a blocked PR is in it", () => {
@@ -552,6 +582,15 @@ describe("failingRow", () => {
       count: 1,
       since: "2026-10-16T19:08:00.000Z",
       keys: ["failing:Gale"],
+      items: [
+        {
+          repo: null,
+          agent: "Gale",
+          label: "Gale",
+          at: "2026-10-16T19:08:00.000Z",
+          key: "failing:Gale",
+        },
+      ],
     });
   });
 
@@ -638,6 +677,26 @@ describe("releaseRow", () => {
         releaseKey("acme/lib", 7),
         releaseKey("acme/app", 3),
         releaseKey("acme/app", 4),
+      ],
+      items: [
+        {
+          repo: "acme/lib",
+          label: "lib",
+          at: "2026-10-16T18:00:00.000Z",
+          key: releaseKey("acme/lib", 7),
+        },
+        {
+          repo: "acme/app",
+          label: "app",
+          at: "2026-10-16T12:00:00.000Z",
+          key: releaseKey("acme/app", 3),
+        },
+        {
+          repo: "acme/app",
+          label: "app",
+          at: "2026-10-16T19:00:00.000Z",
+          key: releaseKey("acme/app", 4),
+        },
       ],
     });
   });

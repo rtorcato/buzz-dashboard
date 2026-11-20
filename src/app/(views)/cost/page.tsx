@@ -38,8 +38,19 @@ import {
   total,
 } from "@/lib/cost";
 import { costConnected, signerRecord } from "@/lib/cost-source";
-import { costByChannel, costByDay, historyEnabled } from "@/lib/history";
+import {
+  costByChannel,
+  costByDay,
+  costUntagged,
+  historyEnabled,
+} from "@/lib/history";
 import { dayStarts, loadHive } from "@/lib/hive";
+import { loadHiveWideChannels, loadRequestScope } from "@/lib/project-data";
+import {
+  channelProjectLabel,
+  NOT_ATTRIBUTED,
+  type ScopeProject,
+} from "@/lib/project-scope";
 import { one, ownKey } from "@/lib/query";
 
 export const metadata: Metadata = { title: "Cost · Hive" };
@@ -71,6 +82,7 @@ export default async function CostPage({ searchParams }: PageProps<"/cost">) {
   // Cost lives in the history store (#39); without it the view isn't there.
   if (!historyEnabled()) notFound();
   const params = await searchParams;
+  const { scope, projects } = await loadRequestScope(params);
   const range: CostRange = ownKey(
     COST_RANGES,
     one(params.range),
@@ -113,7 +125,12 @@ export default async function CostPage({ searchParams }: PageProps<"/cost">) {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   let rows: Awaited<ReturnType<typeof costByDay>>;
   try {
-    rows = await costByDay(new Date(starts[0] * 1000), timeZone);
+    // A project reads only spend tagged with its channels (#167).
+    rows = await costByDay(
+      new Date(starts[0] * 1000),
+      timeZone,
+      scope?.channels,
+    );
   } catch (err) {
     console.error("Cost:", err);
     return (
@@ -128,18 +145,33 @@ export default async function CostPage({ searchParams }: PageProps<"/cost">) {
   const period = days === 7 ? "last 7 days" : `last ${days} days`;
   const showAll = one(params.agents) === "all";
   // Only the owner signer's per-turn reports (#43) carry a channel.
-  const perChannel = (await signerRecord())
+  const tagged = Boolean(await signerRecord());
+  const week = new Date(now.getTime() - 7 * 86_400_000);
+  const rangeFrom = new Date(starts[starts.length - days] * 1000);
+  const [perChannel, untagged] = tagged
     ? await Promise.all([
-        costByChannel(new Date(now.getTime() - 7 * 86_400_000)),
-        loadHive(),
-      ]).then(
-        ([rows, h]) => ({ rows, names: h.hive?.channels ?? {} }),
-        (err) => {
-          console.error("Cost per channel:", err);
-          return null;
-        },
-      )
-    : null;
+        Promise.all([
+          costByChannel(week, scope?.channels),
+          loadHive(),
+          loadHiveWideChannels(),
+          // The table's last row is the week's untagged spend.
+          costUntagged(week),
+        ]).then(
+          ([rows, h, hiveWide, none]) => ({
+            rows,
+            names: h.hive?.channels ?? {},
+            projects,
+            hiveWide,
+            none: scope ? null : none,
+          }),
+          (err) => {
+            console.error("Cost per channel:", err);
+            return null;
+          },
+        ),
+        scope ? costUntagged(rangeFrom).catch(() => null) : null,
+      ])
+    : [null, null];
   const charted = showAll ? s.agents : s.agents.slice(0, MINI_CHARTS);
 
   return (
@@ -177,7 +209,30 @@ export default async function CostPage({ searchParams }: PageProps<"/cost">) {
         />
       </div>
 
-      {s.agents.length === 0 ? (
+      {scope && untagged !== null && untagged > 0 && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Info className="size-4 shrink-0" aria-hidden />
+          <span>
+            <span className="font-medium text-foreground">
+              {NOT_ATTRIBUTED}
+            </span>
+            : {formatUsd(untagged)} est. in this range, not counted above. Spend
+            with no channel tag can&apos;t be placed, so it is never split by
+            guess.
+          </span>
+        </p>
+      )}
+
+      {s.agents.length === 0 && scope && !tagged ? (
+        <EmptyState icon={Coins} title="Cost can't be placed in a project yet">
+          Only per-turn reports carry a channel, and none are connected, so
+          spend can&apos;t be matched to {scope.names.join(", ")}. Check{" "}
+          <Link href={SOURCES} className="underline underline-offset-3">
+            Settings → Sources
+          </Link>
+          .
+        </EmptyState>
+      ) : s.agents.length === 0 ? (
         <EmptyState icon={Coins} title="No cost reports in this range">
           Agents report every minute while they work. Check{" "}
           <Link href={SOURCES} className="underline underline-offset-3">
@@ -481,11 +536,19 @@ function MiniCharts({
 function ChannelTable({
   rows,
   names,
+  projects,
+  hiveWide,
+  none,
 }: {
   rows: { channel: string | null; cost: number; turns: number }[];
   names: Record<string, string>;
+  projects: ScopeProject[];
+  hiveWide: string[];
+  /** The week's spend with no channel tag; null in a project's own view. */
+  none: number | null;
 }) {
-  if (!rows.length) {
+  const untagged = none !== null && none > 0;
+  if (!rows.length && !untagged) {
     return (
       <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
         No turns with a channel in the last 7 days.
@@ -499,6 +562,7 @@ function ChannelTable({
         <thead className="text-left text-xs text-muted-foreground">
           <tr className="border-b">
             <th className="px-4 py-2 font-medium">Channel</th>
+            <th className="px-2 py-2 font-medium max-sm:hidden">Project</th>
             <th className="px-2 py-2 text-right font-medium">Est. cost</th>
             <th className="px-4 py-2 text-right font-medium">Turns</th>
           </tr>
@@ -509,6 +573,11 @@ function ChannelTable({
               <td className="max-w-48 truncate px-4 py-2.5 font-mono text-xs">
                 {(r.channel && names[r.channel]) ?? r.channel}
               </td>
+              <td className="px-2 py-2.5 text-muted-foreground max-sm:hidden">
+                {r.channel
+                  ? channelProjectLabel(r.channel, projects, hiveWide)
+                  : NOT_ATTRIBUTED}
+              </td>
               <td className="px-2 py-2.5 text-right tabular-nums">
                 {formatUsd(r.cost)}
               </td>
@@ -517,6 +586,22 @@ function ChannelTable({
               </td>
             </tr>
           ))}
+          {untagged && (
+            <tr>
+              <td
+                colSpan={2}
+                className="px-4 py-2.5 text-xs text-muted-foreground"
+              >
+                {NOT_ATTRIBUTED}
+              </td>
+              <td className="px-2 py-2.5 text-right tabular-nums">
+                {formatUsd(none)}
+              </td>
+              <td className="px-4 py-2.5 text-right text-muted-foreground">
+                –
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

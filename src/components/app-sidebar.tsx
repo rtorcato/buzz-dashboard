@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { Eye, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useProjectFilter } from "@/components/project-context";
 import { SignInBlock, type SignInState } from "@/components/sign-in";
 import {
   Sidebar,
@@ -44,6 +45,8 @@ export function AppSidebar({
 }) {
   const active = viewOf(usePathname());
   const { setOpenMobile } = useSidebar();
+  // A picked project follows you from view to view (#167).
+  const { carry } = useProjectFilter();
   // Picking a view closes the phone drawer.
   const close = () => setOpenMobile(false);
 
@@ -106,7 +109,11 @@ export function AppSidebar({
                       tooltip={count ? `${label} · ${count} need you` : label}
                       render={
                         <Link
-                          href={viewHref(view)}
+                          href={
+                            view === "projects"
+                              ? viewHref(view)
+                              : carry(viewHref(view))
+                          }
                           onClick={close}
                           aria-current={view === active ? "page" : undefined}
                         />

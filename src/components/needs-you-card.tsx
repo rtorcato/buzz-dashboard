@@ -1,3 +1,5 @@
+"use client";
+
 import {
   AlarmClock,
   ArrowRight,
@@ -19,18 +21,25 @@ import {
 import Link from "next/link";
 import { LocalTime } from "@/components/local-time";
 import { NeedsYouHistory } from "@/components/needs-you-history";
+import { useProjectFilter } from "@/components/project-context";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Card } from "@/components/ui/card";
 import { formatAge } from "@/lib/age";
 import { type Mutes, rowMute } from "@/lib/alerts";
 import type { LogRow } from "@/lib/cleared-log";
+import type { NeedsYou } from "@/lib/needs-you";
 import {
   KIND_VIEW,
-  type NeedsYou,
   type NeedsYouKind,
   type NeedsYouRow,
   oldestFirst,
-} from "@/lib/needs-you";
+} from "@/lib/needs-you-rows";
+import {
+  chipLabel,
+  elsewhereCount,
+  scopeNeedsYou,
+  withProject,
+} from "@/lib/project-scope";
 
 const KIND: Record<NeedsYouKind, { icon: LucideIcon; tone: string }> = {
   release: {
@@ -78,6 +87,16 @@ export function NeedsYouCard({
    */
   snooze: { mutes: Mutes; canEdit: boolean; signIn: boolean } | null;
 }) {
+  const { scope, clearHref } = useProjectFilter();
+  const shownRows = scopeNeedsYou(data.rows, scope);
+  const elsewhere = elsewhereCount(data.rows, scope);
+  const where = scope ? ` in ${chipLabel(scope)}` : "";
+  // A usage pause or a quiet claim of another project isn't this one's.
+  const headsUp = scope
+    ? data.headsUp.filter((l) =>
+        scope.agents.some((a) => l.startsWith(`${a} `)),
+      )
+    : data.headsUp;
   // Rows a live source did report still show while the rest are disconnected.
   if (!data.connected && data.rows.length === 0) {
     return (
@@ -92,12 +111,12 @@ export function NeedsYouCard({
             can&apos;t say whether anything needs you.
           </p>
         </div>
-        <HeadsUp lines={data.headsUp} />
+        <HeadsUp lines={headsUp} />
       </Card>
     );
   }
 
-  if (data.rows.length === 0) {
+  if (shownRows.length === 0) {
     return (
       <Card className="gap-0 py-0">
         <div className="flex items-center gap-3 px-4 py-4 sm:px-6">
@@ -105,20 +124,26 @@ export function NeedsYouCard({
             <Check className="size-5" aria-hidden />
           </span>
           <div>
-            <h2 className="font-semibold">All clear. Nothing needs you.</h2>
+            <h2 className="font-semibold">
+              {scope
+                ? `All clear${where}. Nothing needs you.`
+                : "All clear. Nothing needs you."}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              No releases waiting, main is green on every repo, nothing is
-              blocked.
+              {scope
+                ? "No release waiting, main is green, nothing is blocked here."
+                : "No releases waiting, main is green on every repo, nothing is blocked."}
+              <Elsewhere n={elsewhere} href={clearHref} />
             </p>
           </div>
-          <HeadsUp lines={data.headsUp} />
+          <HeadsUp lines={headsUp} />
         </div>
         {cleared && <NeedsYouHistory rows={cleared} now={now} />}
       </Card>
     );
   }
 
-  const rows = oldestFirst(data.rows).map((row) => ({
+  const rows = oldestFirst(shownRows).map((row) => ({
     row,
     mute: row.keys && snooze ? rowMute(row.keys, snooze.mutes, now) : null,
   }));
@@ -132,15 +157,15 @@ export function NeedsYouCard({
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <h2 className="flex items-center gap-2 font-semibold">
           <BellRing className="size-4 text-warning" aria-hidden />
-          Needs you
+          Needs you{where}
           <span className="rounded-full bg-primary px-2 text-xs leading-5 text-primary-foreground tabular-nums">
-            {data.rows.length}
+            {shownRows.length}
           </span>
         </h2>
         <span className="hidden items-center gap-3 text-sm text-muted-foreground sm:flex">
           {snooze?.signIn &&
             !snooze.canEdit &&
-            data.rows.some((r) => r.keys?.length) && (
+            shownRows.some((r) => r.keys?.length) && (
               <span className="hidden items-center gap-1.5 md:inline-flex">
                 <LogIn className="size-3.5" aria-hidden />
                 Sign in to snooze or acknowledge
@@ -158,7 +183,7 @@ export function NeedsYouCard({
           return (
             <li key={`${row.kind}:${row.title}`} className="flex items-center">
               <Link
-                href={`/${view}`}
+                href={withProject(`/${view}`, scope?.slugs ?? [])}
                 className="flex min-h-11 min-w-0 flex-1 items-center gap-3 px-4 py-3 outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 sm:px-6"
               >
                 <span
@@ -229,9 +254,36 @@ export function NeedsYouCard({
           )}
         </p>
       )}
-      <HeadsUp lines={data.headsUp} footer />
+      {elsewhere > 0 && (
+        <p className="border-t px-4 py-2.5 text-sm text-muted-foreground sm:px-6">
+          <Elsewhere n={elsewhere} href={clearHref} bare />
+        </p>
+      )}
+      <HeadsUp lines={headsUp} footer />
       {cleared && <NeedsYouHistory rows={cleared} now={now} />}
     </Card>
+  );
+}
+
+// "2 more in other projects · Show": one muted line, never a list.
+function Elsewhere({
+  n,
+  href,
+  bare,
+}: {
+  n: number;
+  href: string;
+  bare?: boolean;
+}) {
+  if (n === 0) return null;
+  return (
+    <>
+      {bare ? "" : " "}
+      {n} more in other projects ·{" "}
+      <Link href={href} className="underline underline-offset-3">
+        Show
+      </Link>
+    </>
   );
 }
 

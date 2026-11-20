@@ -88,6 +88,7 @@ export function AgentsView({
   runtimes,
   feed,
   elsewhere = {},
+  alsoIn = {},
 }: {
   agents: Agent[];
   now: number;
@@ -95,6 +96,8 @@ export function AgentsView({
   feed: FeedInfo;
   /** Unreadable channels by agent name (#168), newest first. */
   elsewhere?: Elsewhere;
+  /** With a project picked (#167): the other projects an agent is in. */
+  alsoIn?: Record<string, string[]>;
 }) {
   const settings = useSettings();
   // A pick on this page wins over the saved default until the page reloads.
@@ -261,6 +264,7 @@ export function AgentsView({
               feed={feed}
               quietAfterS={quietAfterS}
               unreadable={elsewhere[a.name] ?? []}
+              alsoIn={alsoIn[a.name]}
             />
           ))}
         </div>
@@ -305,6 +309,7 @@ function AgentCard({
   feed,
   quietAfterS,
   unreadable,
+  alsoIn,
 }: {
   agent: Agent;
   now: number;
@@ -312,6 +317,7 @@ function AgentCard({
   feed: FeedInfo;
   quietAfterS: number;
   unreadable: string[];
+  alsoIn?: string[];
 }) {
   const status = agentStatus(a, now, runtime, quietAfterS, unreadable);
   const ago = a.lastSeenAt ? formatAge((now - a.lastSeenAt) * 1000) : null;
@@ -386,6 +392,11 @@ function AgentCard({
           </div>
           <Sparkline values={a.daily} warn={quiet} />
         </div>
+        {alsoIn && alsoIn.length > 0 && (
+          <p className="mt-3 truncate text-xs text-muted-foreground">
+            Also in {alsoIn.join(", ")}
+          </p>
+        )}
       </Card>
     </Link>
   );

@@ -72,6 +72,8 @@ import {
   weekHourGrid,
 } from "@/lib/overview";
 import { dayName, hourLabel } from "@/lib/overview-range";
+import { loadRequestScope } from "@/lib/project-data";
+import { scopeNeedsYou } from "@/lib/project-scope";
 import { one } from "@/lib/query";
 import { loadStatusFeed, type Runtime } from "@/lib/status-feed";
 import { liveEvents, type Names, type Row, toRow } from "@/lib/timeline";
@@ -102,7 +104,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const prevFrom = from - span;
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const [{ hive }, { feed }, { github }, needsYou, costOn, source] =
+  const [{ hive }, { feed }, { github }, needsYou, costOn, source, { scope }] =
     await Promise.all([
       loadHive(),
       loadStatusFeed(),
@@ -110,6 +112,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       getNeedsYou(),
       costConnected().catch(() => false),
       healthSource().catch(() => null),
+      loadRequestScope(params),
     ]);
   // The layout already shows the relay's Alert.
   if (!hive) return <OpenOnRedirect />;
@@ -210,7 +213,8 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         .map((m) => m.channel),
     ),
   ]).size;
-  const needs = needsYou.rows.length;
+  // The greeting's count follows a picked project (#167), like the card.
+  const needs = scopeNeedsYou(needsYou.rows, scope).length;
   const rangeLabel = range;
 
   const kpis: Kpi[] = [

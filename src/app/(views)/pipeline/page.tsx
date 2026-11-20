@@ -51,6 +51,8 @@ import {
   prEvents,
   retentionDays,
 } from "@/lib/history";
+import { loadRequestScope } from "@/lib/project-data";
+import { eventScope, type Scope, withProject } from "@/lib/project-scope";
 import { one, ownKey } from "@/lib/query";
 
 export const metadata: Metadata = { title: "Pipeline · Hive" };
@@ -86,10 +88,15 @@ const dur = (s: number | null) => (s === null ? "—" : formatDuration(s));
 
 // DESIGN.md → Views → Pipeline: a Now / Flow tab row. Links, not client
 // tabs, so each tab is its own server render and URL.
-function PipelineTabs({ flow }: { flow: boolean }) {
+function PipelineTabs({ flow, scope }: { flow: boolean; scope: Scope | null }) {
+  const slugs = scope?.slugs ?? [];
   const tabs = [
-    { label: "Now", href: "/pipeline", active: !flow },
-    { label: "Flow", href: "/pipeline?tab=flow", active: flow },
+    { label: "Now", href: withProject("/pipeline", slugs), active: !flow },
+    {
+      label: "Flow",
+      href: withProject("/pipeline?tab=flow", slugs),
+      active: flow,
+    },
   ];
   return (
     <nav
@@ -119,12 +126,13 @@ export default async function PipelinePage({
 }: PageProps<"/pipeline">) {
   const params = await searchParams;
   const history = historyEnabled();
+  const { scope } = await loadRequestScope(params);
   // Without a database there is no Flow tab (DESIGN.md:20), only Now.
   if (!history || one(params.tab) !== "flow") {
     return (
       <div className="space-y-6">
         <h2 className="sr-only">Pipeline</h2>
-        {history && <PipelineTabs flow={false} />}
+        {history && <PipelineTabs flow={false} scope={scope} />}
         {/* ponytail: placeholder until the Now view lands. */}
         <EmptyState icon={GitPullRequest} title="Pipeline is not built yet">
           ai-* label counts and PR throughput from GitHub.
@@ -132,13 +140,15 @@ export default async function PipelinePage({
       </div>
     );
   }
-  return <Flow params={params} />;
+  return <Flow params={params} scope={scope} />;
 }
 
 async function Flow({
   params,
+  scope,
 }: {
   params: Record<string, string | string[] | undefined>;
+  scope: Scope | null;
 }) {
   const range: FlowRange = ownKey(
     FLOW_RANGES,
@@ -158,7 +168,7 @@ async function Flow({
 
   let data: Awaited<ReturnType<typeof readFlow>>;
   try {
-    data = await readFlow(since);
+    data = await readFlow(since, scope);
   } catch (err) {
     console.error("Pipeline flow:", err);
     return (
@@ -204,7 +214,7 @@ async function Flow({
     <div className="space-y-6">
       <h2 className="sr-only">Pipeline flow</h2>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <PipelineTabs flow />
+        <PipelineTabs flow scope={scope} />
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Database className="size-3.5" aria-hidden />
           History from the database
@@ -227,7 +237,7 @@ async function Flow({
             <>
               No stored PRs match these filters.{" "}
               <Link
-                href="/pipeline?tab=flow"
+                href={withProject("/pipeline?tab=flow", scope?.slugs ?? [])}
                 className="underline underline-offset-3"
               >
                 Clear filters
@@ -390,8 +400,12 @@ async function Flow({
   );
 }
 
-async function readFlow(since: Date) {
-  const [events, stats] = await Promise.all([prEvents(since), historyStats()]);
+async function readFlow(since: Date, scope: Scope | null) {
+  // A project reads its repos' events through the repo index (#166).
+  const [events, stats] = await Promise.all([
+    prEvents(since, scope ? eventScope(scope) : undefined),
+    historyStats(),
+  ]);
   return { events, since: stats.since };
 }
 
