@@ -1,5 +1,6 @@
 "use client";
 
+import { useCopy } from "@rtorcato/react-common";
 import {
   ArrowLeft,
   Check,
@@ -9,9 +10,13 @@ import {
   CircleDashed,
   CircleSlash,
   CircleX,
+  Copy,
+  ExternalLink,
+  KeyRound,
   Lock,
   PlugZap,
   Server,
+  ShieldCheck,
 } from "lucide-react";
 import { nip19 } from "nostr-tools";
 import { useEffect, useState } from "react";
@@ -21,6 +26,7 @@ import {
   FinishStep,
   SourcesStep,
 } from "@/components/setup-wizard-sources";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,14 +41,13 @@ import { Textarea } from "@/components/ui/textarea";
 // DESIGN.md → Setup wizard → The steps.
 const STEPS = [
   { name: "Dashboard key", line: "Its own read-only identity" },
-  { name: "Owner", line: "You vouch for it, once" },
+  { name: "Owner", line: "Vouch for it in Buzz, once" },
   { name: "Relay", line: "Test the connection" },
   { name: "Optional sources", line: "GitHub, media, history" },
   { name: "Finish", line: "Review and close setup" },
 ] as const;
 
 const npubOf = (hex: string) => nip19.npubEncode(hex);
-const shortNpub = (n: string) => `${n.slice(0, 12)}…${n.slice(-6)}`;
 
 export function SetupWizard() {
   const [step, setStep] = useState(0);
@@ -227,7 +232,7 @@ function KeyStep({ onPass }: { onPass: () => void }) {
             </li>
             <li className="flex gap-2 text-muted-foreground">
               <CircleSlash className="mt-0.5 size-4 shrink-0" aria-hidden />
-              Hold your owner key. That stays in your extension.
+              Hold your owner key. That stays in Buzz.
             </li>
           </ul>
         </div>
@@ -246,104 +251,345 @@ function KeyStep({ onPass }: { onPass: () => void }) {
   );
 }
 
+type OwnerError = {
+  kind: "not-a-proof" | "other-key" | "rejected" | "server";
+  looksLikeKey?: boolean;
+};
+
+const Chip = ({ children }: { children: React.ReactNode }) => (
+  <code className="rounded-md border bg-muted px-1.5 py-0.5 font-mono text-xs">
+    {children}
+  </code>
+);
+
+// A 28px numbered marker; turns to a check on the success tint once done.
+function PartMarker({ n, done }: { n: number; done: boolean }) {
+  return (
+    <span
+      className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-xs ${
+        done
+          ? "border-transparent bg-success/14 text-success"
+          : "text-muted-foreground"
+      }`}
+    >
+      {done ? <Check className="size-3.5" aria-hidden /> : n}
+    </span>
+  );
+}
+
+function Part({
+  n,
+  done,
+  title,
+  line,
+  children,
+}: {
+  n: number;
+  done: boolean;
+  title: string;
+  line?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-3">
+      <PartMarker n={n} done={done} />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div>
+          <p className="text-sm font-medium">{title}</p>
+          {line && <p className="text-xs text-muted-foreground">{line}</p>}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// DESIGN.md → Setup wizard → 2. Owner (#175).
 function OwnerStep({ onPass }: { onPass: () => void }) {
-  const [tag, setTag] = useState("");
+  const [dashKey, setDashKey] = useState<string | null>(null);
+  const { copy, copied } = useCopy(2000);
+  const [everCopied, setEverCopied] = useState(false);
+  const [proof, setProof] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<OwnerError | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
 
-  async function save() {
+  useEffect(() => {
+    fetch("/api/setup/key")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j: { pubkey: string }) => setDashKey(j.pubkey))
+      .catch(() => setDashKey(null));
+  }, []);
+
+  const first = dashKey?.slice(0, 4);
+  const last = dashKey?.slice(-4);
+
+  async function check(value: string) {
+    if (!value.trim() || busy || owner) return;
     setBusy(true);
     setError(null);
     const res = await fetch("/api/setup/owner", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tag }),
+      body: JSON.stringify({ tag: value }),
     }).catch(() => null);
     setBusy(false);
     const j = (await res?.json().catch(() => null)) as {
       owner?: string;
-      error?: string;
+      kind?: OwnerError["kind"];
+      looksLikeKey?: boolean;
     } | null;
     if (res?.ok && j?.owner) {
       setOwner(npubOf(j.owner));
       onPass();
-    } else setError(j?.error ?? "The server couldn’t save that. Try again.");
+    } else if (res?.status === 422 && j?.kind) {
+      setError({ kind: j.kind, looksLikeKey: j.looksLikeKey });
+    } else setError({ kind: "server" });
   }
 
   return (
     <>
       <Heading
-        title="Vouch for the dashboard"
-        text="Your relay only lets the dashboard in if a member vouches for its key. Paste a signed NIP-OA attestation for the dashboard’s key. Your owner key never touches this server."
+        title="Let your Buzz account vouch for the dashboard"
+        text="Your relay only lets the dashboard in if a member vouches for it. You do that once in Buzz desktop, then paste the proof it gives you here. Your own key never leaves Buzz."
       />
-      <div className="space-y-3 pt-3">
-        {/* ponytail: signing in the extension waits on a decision. NIP-07
-            signs events, but a NIP-OA signature is over a raw hash. */}
-        <label
-          htmlFor="owner-tag"
-          className="block space-y-1.5 text-sm font-medium"
+      <div className="space-y-5 pt-3">
+        <Part
+          n={1}
+          done={everCopied || !!owner}
+          title="Copy the dashboard’s key"
+          line="This is the key Buzz will vouch for. It’s public, so it’s safe to copy and share."
         >
-          Signed attestation
-          <Textarea
-            id="owner-tag"
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            placeholder='["auth","<owner hex>","<conditions>","<sig>"]'
-            spellCheck={false}
-            rows={4}
-            className="font-mono text-xs"
-            aria-invalid={error ? true : undefined}
-          />
-        </label>
-        <p className="text-xs text-muted-foreground">
-          Sign it for the dashboard’s npub with your own tooling.{" "}
-          <a
-            className="underline"
-            href="https://docs.torcato.dev/buzz-dashboard/docs/configuration"
-            target="_blank"
-            rel="noreferrer"
-          >
-            How to make one
-          </a>
-        </p>
-        {error && (
-          <p role="alert" className="flex gap-1.5 text-xs text-destructive">
-            <CircleX className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            {error}
-          </p>
-        )}
-        <Button
-          variant="outline"
-          className="h-10 max-md:h-11"
-          disabled={busy || !tag.trim() || !!owner}
-          onClick={save}
-        >
-          Check attestation
-        </Button>
+          <div className="flex flex-col gap-3 rounded-lg border p-3 md:flex-row md:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              {/* biome-ignore lint/performance/noImgElement: the 32px static mark. */}
+              <img src="/icon.svg" alt="" className="size-8 rounded-md" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-muted-foreground">
+                  Hive dashboard · public key
+                </p>
+                <p className="break-all font-mono text-xs text-muted-foreground">
+                  {dashKey ? (
+                    <>
+                      <span className="font-semibold text-foreground">
+                        {first}
+                      </span>
+                      {dashKey.slice(4, -4)}
+                      <span className="font-semibold text-foreground">
+                        {last}
+                      </span>
+                    </>
+                  ) : (
+                    "Loading the key…"
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="h-10 max-md:h-11 max-md:w-full"
+              disabled={!dashKey}
+              onClick={() => {
+                if (!dashKey) return;
+                copy(dashKey);
+                setEverCopied(true);
+              }}
+            >
+              {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+              {copied ? "Copied" : "Copy key"}
+            </Button>
+          </div>
+        </Part>
+
+        <Part n={2} done={!!owner} title="Authorize it in Buzz desktop">
+          <ol className="space-y-1.5 text-sm">
+            {[
+              <>
+                Open <Chip>Settings</Chip> › <Chip>Buzz</Chip> ›{" "}
+                <Chip>Security</Chip>.
+              </>,
+              <>
+                Select <Chip>Authorize external identity</Chip> and paste the
+                key.
+              </>,
+              <>
+                Select <Chip>Authorize identity</Chip>.
+                {first && last && (
+                  <>
+                    {" "}
+                    Check the key Buzz shows starts with{" "}
+                    <code className="font-mono">{first}</code> and ends with{" "}
+                    <code className="font-mono">{last}</code>.
+                  </>
+                )}
+              </>,
+              <>
+                Select <Chip>Authorize this key</Chip>.
+              </>,
+              <>
+                Select <Chip>Copy ownership proof</Chip>. Buzz puts the proof on
+                your clipboard.
+              </>,
+            ].map((line, i) => (
+              <li key={String(i)} className="flex gap-2">
+                <span
+                  className="w-4 shrink-0 font-mono text-xs leading-5 text-muted-foreground"
+                  aria-hidden
+                >
+                  {"abcde"[i]}
+                </span>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ol>
+        </Part>
+
+        <Part n={3} done={!!owner} title="Paste the proof here">
+          <div className="space-y-2">
+            <label htmlFor="owner-proof" className="sr-only">
+              Ownership proof
+            </label>
+            <Textarea
+              id="owner-proof"
+              value={proof}
+              onChange={(e) => {
+                setProof(e.target.value);
+                setError(null);
+              }}
+              onPaste={(e) => {
+                // Check on paste, no button press: use the pasted text itself,
+                // since state hasn't caught up yet.
+                const text = e.clipboardData.getData("text");
+                if (text.trim()) {
+                  e.preventDefault();
+                  setProof(text);
+                  void check(text);
+                }
+              }}
+              placeholder="Paste the proof Buzz copied"
+              spellCheck={false}
+              rows={4}
+              readOnly={!!owner}
+              className={`text-xs ${proof ? "font-mono" : ""} ${
+                owner ? "border-success" : error ? "border-destructive" : ""
+              }`}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "owner-proof-error" : undefined}
+            />
+            {error && (
+              <p
+                id="owner-proof-error"
+                role="alert"
+                className="flex gap-1.5 text-xs text-destructive"
+              >
+                <CircleX className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                <span>{ownerMessage(error, last)}</span>
+              </p>
+            )}
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+              <Button
+                variant="outline"
+                className="h-10 max-md:h-11 max-md:w-full"
+                disabled={busy || !proof.trim() || !!owner}
+                onClick={() => check(proof)}
+              >
+                <ShieldCheck aria-hidden /> Check proof
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                We check it as soon as you paste.
+              </span>
+            </div>
+          </div>
+        </Part>
+
         {owner && (
           <div
-            className="space-y-1 rounded-lg border border-success/35 bg-success/6 p-3"
+            className="space-y-2 rounded-lg border border-success/35 bg-success/6 p-3"
             aria-live="polite"
           >
-            <p className="flex items-center gap-2 text-sm font-semibold">
-              Owner
-              <Badge variant="secondary" className="text-success">
-                <CircleCheckBig aria-hidden /> Signed
-              </Badge>
-            </p>
-            <p className="font-mono text-xs text-muted-foreground">
-              {shortNpub(owner)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              This account becomes the dashboard’s owner. Only agents it has
-              attested count as agents.
+            <div className="flex items-center gap-3">
+              <Avatar size="lg">
+                <AvatarFallback>
+                  {owner.slice(5, 7).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <Badge variant="secondary" className="text-success">
+                  <CircleCheckBig aria-hidden /> Proof checked
+                </Badge>
+                <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                  {owner}
+                </p>
+              </div>
+            </div>
+            <p className="flex gap-1.5 text-xs text-muted-foreground">
+              <KeyRound className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              <span>
+                <strong className="font-semibold">
+                  This account becomes the dashboard’s owner.
+                </strong>{" "}
+                Only it can sign in to snooze, ack and change sources.
+              </span>
             </p>
           </div>
         )}
+
+        <p className="text-xs text-muted-foreground">
+          Only paste a proof for this key. It doesn’t expire.{" "}
+          <a
+            className="inline-flex items-center gap-1 underline"
+            href="https://docs.torcato.dev/buzz-dashboard/docs/relay-identity#owner-attestation"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Step-by-step guide <ExternalLink className="size-3" aria-hidden />
+          </a>
+        </p>
       </div>
     </>
   );
+}
+
+function ownerMessage(e: OwnerError, last: string | undefined) {
+  switch (e.kind) {
+    case "other-key":
+      return (
+        <>
+          <strong className="font-semibold">
+            This proof isn’t for this dashboard’s key.
+          </strong>{" "}
+          Buzz may have authorized a different key. In Buzz, authorize the key
+          above
+          {last ? (
+            <>
+              , ending in <code className="font-mono">{last}</code>,
+            </>
+          ) : null}{" "}
+          and copy a new proof.
+        </>
+      );
+    case "not-a-proof":
+      return (
+        <>
+          <strong className="font-semibold">
+            That isn’t an ownership proof.
+          </strong>{" "}
+          {e.looksLikeKey && "It looks like a public key. "}In Buzz, finish step
+          2 and select Copy ownership proof, then paste what it copies.
+        </>
+      );
+    case "rejected":
+      return (
+        <>
+          <strong className="font-semibold">
+            Buzz didn’t make this proof for this dashboard.
+          </strong>{" "}
+          Copy a new proof from Buzz and paste it again.
+        </>
+      );
+    default:
+      return "The server couldn’t save that. Try again.";
+  }
 }
 
 type CheckRow = {
