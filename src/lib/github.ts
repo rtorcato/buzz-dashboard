@@ -416,16 +416,33 @@ const TTL_MS = 2 * 60_000;
 // The freshness line turns `warning` at 5 minutes (DESIGN.md), so a read that
 // old is never served: the request waits for a new one, or shows "source down".
 const STALE_MS = 5 * 60_000;
+// A failed read is remembered this long, so a bad token or an outage answers
+// at once instead of starting a fresh 20s read on every request (#162).
+const FAILED_MS = 60_000;
 let last: Fetched | undefined;
+let failed: { error: string; at: number } | undefined;
 let inflight: Promise<Fetched> | undefined;
 
 // One read at a time per server process, however many requests want it.
 function refresh(token: string): Promise<Fetched> {
+  const start = Date.now();
   inflight ??= getGitHub(token)
-    .then((github) => {
-      last = { github, fetchedAt: new Date().toISOString() };
-      return last;
-    })
+    .then(
+      (github) => {
+        last = { github, fetchedAt: new Date().toISOString() };
+        failed = undefined;
+        console.info(`GitHub read: ok in ${Date.now() - start} ms`);
+        return last;
+      },
+      (err) => {
+        const error = err instanceof Error ? err.message : "error";
+        failed = { error, at: Date.now() };
+        console.warn(
+          `GitHub read: failed in ${Date.now() - start} ms: ${error}`,
+        );
+        throw err;
+      },
+    )
     .finally(() => {
       inflight = undefined;
     });
@@ -447,6 +464,9 @@ export async function readGitHub(): Promise<GitHubResult> {
   if (last && age < STALE_MS) {
     if (age >= TTL_MS) refresh(token).catch(() => {});
     return last;
+  }
+  if (failed && Date.now() - failed.at < FAILED_MS) {
+    return { github: null, error: failed.error };
   }
   try {
     return await refresh(token);
