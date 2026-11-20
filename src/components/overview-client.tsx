@@ -90,6 +90,7 @@ const DOT: Record<AgentStatus, string> = {
   active: "bg-success",
   idle: "bg-muted-foreground",
   quiet: "bg-warning",
+  elsewhere: "bg-muted-foreground",
   stopped: "bg-muted-foreground/50",
 };
 
