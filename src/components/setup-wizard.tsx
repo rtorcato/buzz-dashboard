@@ -6,9 +6,11 @@ import {
   ChevronRight,
   CircleCheck,
   CircleCheckBig,
+  CircleDashed,
   CircleSlash,
   CircleX,
   Lock,
+  PlugZap,
   Server,
 } from "lucide-react";
 import { nip19 } from "nostr-tools";
@@ -22,10 +24,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-// DESIGN.md → Setup wizard → The steps. Steps 1 and 2 are here; the rest land
-// in the next PRs (#73 parts 3b and 3c).
+// DESIGN.md → Setup wizard → The steps. Steps 1 to 3 are here; the rest land
+// in the next PR (#73 part 3c).
 const STEPS = [
   { name: "Dashboard key", line: "Its own read-only identity" },
   { name: "Owner", line: "You vouch for it, once" },
@@ -113,7 +116,8 @@ export function SetupWizard() {
             </p>
             {step === 0 && <KeyStep onPass={() => pass(0)} />}
             {step === 1 && <OwnerStep onPass={() => pass(1)} />}
-            {step > 1 && (
+            {step === 2 && <RelayStep onPass={(ok) => pass(2, ok)} />}
+            {step > 2 && (
               <>
                 <h1 className="text-xl font-semibold">{STEPS[step].name}</h1>
                 <p className="text-sm text-muted-foreground">
@@ -136,8 +140,8 @@ export function SetupWizard() {
             )}
             <Button
               className="h-10 max-md:h-11"
-              aria-disabled={!done[step] || step > 1}
-              disabled={!done[step] || step > 1}
+              aria-disabled={!done[step] || step > 2}
+              disabled={!done[step] || step > 2}
               onClick={() => setStep(step + 1)}
             >
               Continue <ChevronRight aria-hidden />
@@ -332,6 +336,142 @@ function OwnerStep({ onPass }: { onPass: () => void }) {
             </p>
           </div>
         )}
+      </div>
+    </>
+  );
+}
+
+type Check = {
+  id: string;
+  state: "ok" | "failed" | "skipped";
+  title: string;
+  detail?: string;
+  relaySaid?: string;
+};
+type RelayResult = { ok: boolean; checks: Check[]; agents: string[] };
+
+function RelayStep({ onPass }: { onPass: (ok: boolean) => void }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<RelayResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function test(target: string) {
+    if (!target.trim()) return;
+    setBusy(true);
+    setError(null);
+    onPass(false);
+    const res = await fetch("/api/setup/relay", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: target }),
+    }).catch(() => null);
+    const j = (await res?.json().catch(() => null)) as
+      | (RelayResult & { error?: string })
+      | null;
+    setBusy(false);
+    if (j?.checks) {
+      setResult(j);
+      onPass(j.ok);
+    } else
+      setError(j?.error ?? "The server couldn’t run the check. Try again.");
+  }
+
+  return (
+    <>
+      <Heading
+        title="Connect to your relay"
+        text="Where your Buzz community lives. The dashboard logs in with its key and your attestation, then counts your agents."
+      />
+      <div className="space-y-3 pt-3">
+        <label
+          htmlFor="relay-url"
+          className="block space-y-1.5 text-sm font-medium"
+        >
+          Relay URL
+          <div className="flex gap-2 max-md:flex-col">
+            <Input
+              id="relay-url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="wss://relay.example.com"
+              spellCheck={false}
+              className="font-mono"
+            />
+            <Button
+              variant="outline"
+              className="h-10 max-md:h-11"
+              disabled={busy || !url.trim()}
+              onClick={() => test(url)}
+            >
+              <PlugZap aria-hidden /> {result ? "Test again" : "Test"}
+            </Button>
+          </div>
+        </label>
+        {error && (
+          <p role="alert" className="flex gap-1.5 text-xs text-destructive">
+            <CircleX className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            {error}
+          </p>
+        )}
+        <ul aria-live="polite" className="space-y-2">
+          {result?.checks.map((c) => (
+            <li key={c.id} className="flex gap-2 text-sm">
+              {c.state === "ok" ? (
+                <CircleCheck
+                  className="mt-0.5 size-4 shrink-0 text-success"
+                  aria-hidden
+                />
+              ) : c.state === "failed" ? (
+                <CircleX
+                  className="mt-0.5 size-4 shrink-0 text-destructive"
+                  aria-hidden
+                />
+              ) : (
+                <CircleDashed
+                  className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              )}
+              <div className="min-w-0 flex-1 space-y-1">
+                <p
+                  className={
+                    c.state === "failed"
+                      ? "font-semibold text-destructive"
+                      : c.state === "skipped"
+                        ? "text-muted-foreground"
+                        : ""
+                  }
+                >
+                  {c.title}
+                  {c.state === "skipped" && " · skipped"}
+                </p>
+                {c.state === "failed" && c.detail && (
+                  <p className="text-xs text-muted-foreground">{c.detail}</p>
+                )}
+                {c.relaySaid && (
+                  <p className="font-mono text-xs text-muted-foreground">
+                    relay said: {c.relaySaid}
+                  </p>
+                )}
+                {c.id === "agents" &&
+                  c.state === "ok" &&
+                  result.agents.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {result.agents.slice(0, 4).join(", ")}
+                      {result.agents.length > 4 &&
+                        ` and ${result.agents.length - 4} more`}
+                    </p>
+                  )}
+              </div>
+              {c.state === "ok" && c.detail && (
+                <span className="text-xs text-muted-foreground">
+                  {c.detail}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
       </div>
     </>
   );
