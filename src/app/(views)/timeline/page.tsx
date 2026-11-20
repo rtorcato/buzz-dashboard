@@ -36,6 +36,8 @@ import { agentName, dayStarts, loadHive } from "@/lib/hive";
 import { githubRows } from "@/lib/ingest";
 import { getNeedsYou, needsYouRefs } from "@/lib/needs-you";
 import { npubEncode } from "@/lib/npub";
+import { loadRequestScope } from "@/lib/project-data";
+import { eventScope, repoInScope, withProject } from "@/lib/project-scope";
 import {
   type DayGroup,
   type Filters,
@@ -293,9 +295,10 @@ export default async function TimelinePage({
   const params = await searchParams;
   const filters = parseFilters(params);
   const now = new Date();
-  const [{ hive }, needsYou] = await Promise.all([
+  const [{ hive }, needsYou, { scope }] = await Promise.all([
     loadHive(),
     getNeedsYou().then(needsYouRefs),
+    loadRequestScope(params),
   ]);
   const agents = hive?.agents ?? [];
   const byKey = new Map(
@@ -338,8 +341,14 @@ export default async function TimelinePage({
     kinds: filters.type ? [...TYPES[filters.type].kinds] : undefined,
     repo: filters.repo ?? undefined,
     actors: actors ?? undefined,
+    // The project's repos and channels, through the indexes (#166).
+    project: scope ? eventScope(scope) : undefined,
     text: filters.q || undefined,
   };
+  // Events from a channel the relay doesn't name aren't read (#167).
+  const unreadable = scope
+    ? scope.channels.filter((c) => !hive?.channels[c]).length
+    : 0;
 
   let data: Awaited<ReturnType<typeof readHistory>>;
   try {
@@ -379,9 +388,17 @@ export default async function TimelinePage({
       <Card className="gap-4 px-4 sm:px-6">
         <TimelineFilters
           filters={filters}
-          repos={repos}
+          repos={scope ? repos.filter((r) => repoInScope(scope, r)) : repos}
           agents={agents.map((a) => a.name).sort()}
         />
+        {unreadable > 0 && (
+          <p className="text-sm text-muted-foreground">
+            {unreadable === 1
+              ? "1 channel in this project is one the dashboard can't read"
+              : `${unreadable} channels in this project are ones the dashboard can't read`}
+            , so its Buzz events are missing here. GitHub events still show.
+          </p>
+        )}
         {counts && (
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
@@ -417,7 +434,10 @@ export default async function TimelinePage({
         filtered ? (
           <EmptyState icon={Activity} title="Nothing matches">
             No stored events match these filters.{" "}
-            <Link href="/timeline" className="underline underline-offset-3">
+            <Link
+              href={withProject("/timeline", scope?.slugs ?? [])}
+              className="underline underline-offset-3"
+            >
               Clear filters
             </Link>
           </EmptyState>
