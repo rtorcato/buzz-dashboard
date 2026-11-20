@@ -118,6 +118,8 @@ export function sampleChannelMap(): ChannelMap {
   const row = (
     r: Partial<ChannelRow> & Pick<ChannelRow, "id" | "name">,
   ): ChannelRow => ({
+    description: "",
+    revision: 0,
     isPrivate: true,
     archived: false,
     readable: true,
@@ -184,8 +186,24 @@ export function sampleChannelMap(): ChannelMap {
     rows,
     registry: true,
     projects: [app, lib],
+    choices: [app, lib],
   };
 }
+
+/**
+ * The owner's channel admin controls on sample data (#169), so the sheet and
+ * dialogs can be seen and screenshotted. Signing goes nowhere: there is no
+ * relay, and the route refuses without an owner session.
+ */
+export const sampleChannelAdmin = () => ({
+  relayEventsUrl: "https://relay.example/events",
+  dashboard: fakeKey("dashboard"),
+  owners: [fakeKey("owner")],
+  ownerNpub: null,
+  agents: AGENTS.map(([name]) => ({ pubkey: fakeKey(name), name })),
+  githubOwner: "example",
+  buzzUrl: null,
+});
 
 /** 30 days of messages per day, oldest first, for the agent page. */
 export const sampleActivity = () =>
