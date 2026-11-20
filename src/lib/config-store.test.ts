@@ -44,3 +44,14 @@ describe("config store", () => {
     ).toBe("wss://env");
   });
 });
+
+describe("applySavedConfig", () => {
+  it("does nothing until setup is done, then fills only unset keys", async () => {
+    const { applySavedConfig } = await import("./config-store");
+    const env: Record<string, string> = { A: "env" };
+    applySavedConfig(env, { A: "saved", B: "saved" });
+    expect(env).toEqual({ A: "env" });
+    applySavedConfig(env, { A: "saved", B: "saved", SETUP_DONE: "1" });
+    expect(env).toMatchObject({ A: "env", B: "saved" });
+  });
+});

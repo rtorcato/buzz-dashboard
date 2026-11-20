@@ -135,17 +135,34 @@ access.
 
 ### 2. Let it past relay auth (required)
 
-The relay refuses every query until the connection authenticates. Pick one:
+The relay refuses every query until the connection authenticates. Buzz desktop
+can't add a member by public key, so use an **owner attestation**. A relay
+member vouches for the dashboard's key, and the dashboard presents that proof.
 
-- **Make it a relay member** (simplest). Add the pubkey from step 1 as a member
-  of your relay. Nothing else is needed.
-- **Give it a NIP-OA owner attestation.** If you can't add members, a relay
-  member can sign a tag that vouches for the dashboard's key. Put the tag in
-  `BUZZ_AUTH_TAG` as JSON:
+1. Get the public key: `nak key public <BUZZ_PRIVATE_KEY>`. Send only that to
+   the owner. The private key never leaves the server.
+2. The owner opens **Settings → Buzz → Security → Authorize external
+   identity** in Buzz desktop and pastes the public key (hex). They select
+   **Authorize identity**, check the key, select **Authorize this key**, then
+   **Copy ownership proof**.
+3. Put the copied value in `BUZZ_AUTH_TAG`, unchanged:
 
-  ```sh
-  BUZZ_AUTH_TAG=["auth","<owner-hex>","<conditions>","<sig>"]
-  ```
+   ```sh
+   BUZZ_AUTH_TAG=["auth","<owner-hex>","","<sig>"]
+   ```
+
+   The empty conditions string is normal. An empty `BUZZ_AUTH_TAG=` counts as
+   unset and gives "Buzz relay refused auth".
+4. Recreate the container, since a restart keeps the old env:
+   `docker compose up -d --force-recreate <service>`.
+
+The proof is useless without the private key, so it is safe to send through
+chat. It has no expiry or kind limits, so authorize only this exact key. If
+relay membership is available to you another way, add the pubkey as a member
+and skip `BUZZ_AUTH_TAG`. Members only: the relay serves media to members, so
+relay-hosted avatars can stay blank with an attestation. R2 media is
+unaffected. Troubleshooting and an ordered checklist for an agent are in
+[Connect your Buzz relay](https://docs.torcato.dev/buzz-dashboard/docs/relay-identity).
 
 ### 3. Your owner pubkey (required)
 
@@ -202,6 +219,7 @@ reach the browser, and an empty value counts as unset. See
 | `BUZZ_OWNER_PUBKEY` | This or `BUZZ_AUTH_TAG` | Hex pubkey of your agents' owner. Defaults to the owner in `BUZZ_AUTH_TAG`, and wins when both are set |
 | `BUZZ_DM_PRIVATE_KEY` | No | 64-char hex key the opt-in Buzz DM alert channel posts with. Unset, it uses `BUZZ_PRIVATE_KEY`. Never an owner key: that is refused. See Settings → Alerts |
 | `BUZZ_AUTH_TAG` | If the identity isn't a relay member | NIP-OA owner attestation JSON |
+| `BUZZ_WEB_URL` | No | `http(s)` URL the header's **Open in Buzz** button opens. Unset, the button is hidden |
 | `AUTH_MODE` | No | Owner sign-in for the dashboard's own writes: `nostr` (NIP-07 extension, allowed keys are `BUZZ_OWNER_PUBKEY`, which may be a comma list) or `proxy`. Unset, sign-in is off and nothing can write. See [Owner sign-in](https://docs.torcato.dev/buzz-dashboard/docs/owner-sign-in) |
 | `AUTH_PUBLIC_URL` | With `AUTH_MODE=nostr` | The URL you open the dashboard at, e.g. `https://hive.example.com`. Sign-in events must be signed for it. Without it Nostr sign-in stays off |
 | `AUTH_PROXY_HEADER`, `AUTH_PROXY_SECRET` | With `AUTH_MODE=proxy` | The header your proxy names the user in, and the secret it sends as `X-Buzz-Proxy-Secret`. The user header only counts with that secret |

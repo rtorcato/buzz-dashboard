@@ -228,6 +228,37 @@ export async function countEventsByDay(
   return rows.map((r) => ({ day: new Date(r.day), count: r.count }));
 }
 
+/** How many events match, for the Overview's previous-period deltas. */
+export async function countEvents(q: EventQuery): Promise<number> {
+  const [row] = await historyDb()
+    .select({ count: count() })
+    .from(events)
+    .where(matching(q));
+  return row?.count ?? 0;
+}
+
+/**
+ * How many events match per weekday (0 = Sunday) and hour in `timeZone`, for
+ * the Overview's "When the hive works" heatmap at 30d and 90d.
+ */
+export async function countEventsByWeekHour(
+  q: EventQuery,
+  timeZone: string,
+): Promise<{ dow: number; hour: number; count: number }[]> {
+  const local = sql`(${events.at} at time zone ${timeZone})`;
+  const rows = await historyDb()
+    .select({
+      dow: sql<number>`extract(dow from ${local})`.mapWith(Number),
+      hour: sql<number>`extract(hour from ${local})`.mapWith(Number),
+      count: count(),
+    })
+    .from(events)
+    .where(matching(q))
+    // By position, as in countEventsByDay: the time zone is a parameter.
+    .groupBy(sql`1`, sql`2`);
+  return rows;
+}
+
 /** Every repo with a stored event, A to Z, for the repo filter. */
 export async function historyRepos(): Promise<string[]> {
   const rows = await historyDb()

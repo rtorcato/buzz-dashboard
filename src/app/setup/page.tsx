@@ -2,11 +2,12 @@ import { ShieldCheck } from "lucide-react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SetupGate } from "@/components/setup-gate";
+import { SetupWizard } from "@/components/setup-wizard";
 import { Badge } from "@/components/ui/badge";
 import { SETUP_COOKIE, setupOpen, setupSessionLeft } from "@/lib/setup";
 
 // DESIGN.md → Setup wizard (#73). No sidebar: a 56px bar, then the gate, then
-// (next PR) the five steps. Never served once the relay settings exist.
+// the five steps. Never served once the relay settings exist.
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
@@ -32,14 +33,7 @@ export default async function SetupPage() {
         )}
       </header>
       <main className="mx-auto px-4 pt-6 md:pt-[72px]">
-        {left > 0 ? (
-          // ponytail: the five steps land in the next PR.
-          <p className="text-center text-sm text-muted-foreground">
-            Unlocked. The setup steps come next.
-          </p>
-        ) : (
-          <SetupGate />
-        )}
+        {left > 0 ? <SetupWizard /> : <SetupGate />}
       </main>
     </div>
   );

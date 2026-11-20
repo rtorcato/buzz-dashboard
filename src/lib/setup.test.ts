@@ -11,11 +11,12 @@ const four = {
 };
 
 describe("setup gate", () => {
-  it("is open until all four relay settings exist, env or saved", () => {
+  it("is open until the env sets all four relay settings or Finish saves it", () => {
     expect(s.setupOpen({}, {})).toBe(true);
     expect(s.setupOpen({ ...four, BUZZ_AUTH_TAG: "" }, {})).toBe(true);
     expect(s.setupOpen(four, {})).toBe(false);
-    expect(s.setupOpen({ BUZZ_RELAY_URL: "wss://r" }, four)).toBe(false);
+    expect(s.setupOpen({ BUZZ_RELAY_URL: "wss://r" }, four)).toBe(true);
+    expect(s.setupOpen({}, { ...four, SETUP_DONE: "1" })).toBe(false);
   });
 
   it("takes the token once, then a session until expiry", () => {

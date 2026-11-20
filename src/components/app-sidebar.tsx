@@ -1,17 +1,7 @@
 "use client";
 
-import {
-  Activity,
-  Bot,
-  Coins,
-  Eye,
-  GitPullRequest,
-  HeartPulse,
-  Images,
-  type LucideIcon,
-  Rocket,
-  Settings,
-} from "lucide-react";
+import { cn } from "cn";
+import { Eye, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SignInBlock, type SignInState } from "@/components/sign-in";
@@ -30,41 +20,29 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { View } from "@/lib/needs-you";
+import { type Item, viewHref, viewOf, visibleViews } from "@/lib/views";
 
-// Media and Cost never need the owner, so they have no count.
-type Item = View | "media" | "cost";
-
-// `history: true` marks a view that reads the history store (#39), like
-// Health and Cost; it leaves the sidebar when DATABASE_URL is unset.
-const VIEWS: {
-  view: Item;
-  label: string;
-  icon: LucideIcon;
-  history?: true;
-}[] = [
-  { view: "agents", label: "Agents", icon: Bot },
-  { view: "health", label: "Health", icon: HeartPulse, history: true },
-  { view: "pipeline", label: "Pipeline", icon: GitPullRequest },
-  { view: "releases", label: "Releases", icon: Rocket },
-  { view: "timeline", label: "Timeline", icon: Activity },
-  { view: "cost", label: "Cost", icon: Coins, history: true },
-  { view: "media", label: "Media", icon: Images },
-];
+// DESIGN.md → Obsidian redesign: the selected item gets the --chip fill
+// (sidebar-accent) and a 1px inset border. Phones get 44px rows.
+const SELECTED =
+  "max-md:h-11 data-active:shadow-[inset_0_0_0_1px_var(--border)]";
 
 // DESIGN.md → Sidebar. The route is the selected item.
 export function AppSidebar({
   counts,
+  failing,
   history,
   signIn,
 }: {
   counts: Partial<Record<Item, number>>;
+  /** Views whose count includes a failure: solid destructive, not primary. */
+  failing: Partial<Record<Item, true>>;
   /** True when the history store is configured. */
   history: boolean;
   /** Null when owner sign-in is off (#40). */
   signIn: SignInState | null;
 }) {
-  const active = usePathname().split("/")[1];
+  const active = viewOf(usePathname());
   const { setOpenMobile } = useSidebar();
   // Picking a view closes the phone drawer.
   const close = () => setOpenMobile(false);
@@ -117,43 +95,54 @@ export function AppSidebar({
           <SidebarGroupLabel>Views</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {VIEWS.filter((v) => history || !v.history).map(
-                ({ view, label, icon: Icon }) => {
-                  const count = counts[view] ?? 0;
-                  return (
-                    <SidebarMenuItem key={view}>
-                      <SidebarMenuButton
-                        isActive={view === active}
-                        className="max-md:h-11"
-                        tooltip={count ? `${label} · ${count} need you` : label}
-                        render={
-                          <Link
-                            href={`/${view}`}
-                            onClick={close}
-                            aria-current={view === active ? "page" : undefined}
-                          />
-                        }
-                      >
-                        <Icon aria-hidden />
-                        <span>{label}</span>
-                        {count > 0 && (
-                          // On the icon rail the pill becomes a dot on the icon.
-                          <span
-                            className="absolute top-1.5 left-6 hidden size-1.5 rounded-full bg-destructive group-data-[collapsible=icon]:block"
-                            aria-hidden
-                          />
-                        )}
-                      </SidebarMenuButton>
+              {visibleViews(history).map(({ view, label, icon: Icon }) => {
+                const count = counts[view] ?? 0;
+                const failure = failing[view] === true;
+                return (
+                  <SidebarMenuItem key={view}>
+                    <SidebarMenuButton
+                      isActive={view === active}
+                      className={SELECTED}
+                      tooltip={count ? `${label} · ${count} need you` : label}
+                      render={
+                        <Link
+                          href={viewHref(view)}
+                          onClick={close}
+                          aria-current={view === active ? "page" : undefined}
+                        />
+                      }
+                    >
+                      <Icon aria-hidden />
+                      <span>{label}</span>
                       {count > 0 && (
-                        <SidebarMenuBadge className="bg-destructive/15 text-red-700 dark:text-destructive">
-                          {count}
-                          <span className="sr-only"> need you</span>
-                        </SidebarMenuBadge>
+                        // On the icon rail the pill becomes a dot on the icon.
+                        <span
+                          className={cn(
+                            "absolute top-1.5 left-6 hidden size-1.5 rounded-full group-data-[collapsible=icon]:block",
+                            failure ? "bg-destructive" : "bg-primary",
+                          )}
+                          aria-hidden
+                        />
                       )}
-                    </SidebarMenuItem>
-                  );
-                },
-              )}
+                    </SidebarMenuButton>
+                    {count > 0 && (
+                      // Solid pills; the ! beats the stock hover and
+                      // active text colours, which would fail AA here.
+                      <SidebarMenuBadge
+                        className={cn(
+                          "rounded-full px-1.5 font-semibold",
+                          failure
+                            ? "bg-destructive text-destructive-foreground!"
+                            : "bg-primary text-primary-foreground!",
+                        )}
+                      >
+                        {count}
+                        <span className="sr-only"> need you</span>
+                      </SidebarMenuBadge>
+                    )}
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -171,7 +160,7 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={active === "settings"}
-              className="max-md:h-11"
+              className={SELECTED}
               tooltip="Settings"
               render={
                 <Link
