@@ -549,15 +549,31 @@ type Fetched = { releases: Releases; fetchedAt: string };
 // request after 2 minutes, and never serve one older than 5.
 const TTL_MS = 2 * 60_000;
 const STALE_MS = 5 * 60_000;
+// As github.ts: a failed read answers at once for a minute (#162).
+const FAILED_MS = 60_000;
 let last: Fetched | undefined;
+let failed: { error: string; at: number } | undefined;
 let inflight: Promise<Fetched> | undefined;
 
 function refresh(token: string): Promise<Fetched> {
+  const start = Date.now();
   inflight ??= getReleases(token)
-    .then((releases) => {
-      last = { releases, fetchedAt: new Date().toISOString() };
-      return last;
-    })
+    .then(
+      (releases) => {
+        last = { releases, fetchedAt: new Date().toISOString() };
+        failed = undefined;
+        console.info(`Releases read: ok in ${Date.now() - start} ms`);
+        return last;
+      },
+      (err) => {
+        const error = err instanceof Error ? err.message : "error";
+        failed = { error, at: Date.now() };
+        console.warn(
+          `Releases read: failed in ${Date.now() - start} ms: ${error}`,
+        );
+        throw err;
+      },
+    )
     .finally(() => {
       inflight = undefined;
     });
@@ -571,6 +587,9 @@ export async function readReleases(): Promise<ReleasesResult> {
   if (last && age < STALE_MS) {
     if (age >= TTL_MS) refresh(token).catch(() => {});
     return last;
+  }
+  if (failed && Date.now() - failed.at < FAILED_MS) {
+    return { releases: null, error: failed.error };
   }
   try {
     return await refresh(token);

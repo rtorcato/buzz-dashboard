@@ -306,12 +306,29 @@ export const githubReads = (excluded: Set<string>) =>
 
 // A cold GitHub read takes about 20s. The card doesn't hold every page for it;
 // the read carries on and the next request shows the row.
-const GITHUB_WAIT_MS = 2_000;
-const briefly = <T>(p: Promise<T>) =>
-  Promise.race([
+export const GITHUB_WAIT_MS = 2_000;
+// Once a read misses that wait, later requests give it only this long until
+// it answers, so a read that stays cold doesn't cost every page 2s (#162). A
+// warm read comes from memory, well inside it.
+export const MISSED_WAIT_MS = 100;
+const MISSED_FOR_MS = 60_000;
+const missedAt = new Map<string, number>();
+
+async function briefly<T>(source: string, p: Promise<T>): Promise<T | null> {
+  const missed = Date.now() - (missedAt.get(source) ?? -Infinity);
+  const wait = missed < MISSED_FOR_MS ? MISSED_WAIT_MS : GITHUB_WAIT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
     p,
-    new Promise<null>((r) => setTimeout(r, GITHUB_WAIT_MS, null)),
+    new Promise<null>((r) => {
+      timer = setTimeout(r, wait, null);
+    }),
   ]);
+  clearTimeout(timer);
+  if (result === null) missedAt.set(source, Date.now());
+  else missedAt.delete(source);
+  return result;
+}
 
 export function countsByView(
   rows: NeedsYouRow[],
@@ -376,8 +393,8 @@ export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
   // Both reads share one wait, so a cold start holds the page 2s, not 4s.
   // Silence needs the claims too, so GitHub is read whenever the relay is.
   const [gh, rel] = await Promise.all([
-    token && (reads.length || hive) ? briefly(loadGitHub()) : null,
-    token ? briefly(loadReleases()) : null,
+    token && (reads.length || hive) ? briefly("github", loadGitHub()) : null,
+    token ? briefly("releases", loadReleases()) : null,
   ]);
   if (gh?.github) {
     const merge = reads.includes("merge") && mergeRow(gh.github);

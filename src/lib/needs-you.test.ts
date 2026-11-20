@@ -8,8 +8,10 @@ import {
   countsByView,
   excludedLabels,
   failingRow,
+  GITHUB_WAIT_MS,
   getNeedsYou,
   githubReads,
+  MISSED_WAIT_MS,
   mergeRow,
   type NeedsYouRow,
   needsYouRefs,
@@ -376,6 +378,38 @@ describe("getNeedsYou", () => {
     vi.useRealTimers();
     expect(data.rows).toEqual([]);
     expect(data.failures.map((f) => f.source)).not.toContain("GitHub");
+  });
+
+  it("doesn't hold the next request after a slow read (#162)", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.useFakeTimers();
+    loadGitHub.mockReturnValue(new Promise(() => {}));
+    loadReleases.mockReturnValue(new Promise(() => {}));
+    const first = getNeedsYou();
+    await vi.advanceTimersByTimeAsync(GITHUB_WAIT_MS);
+    await first;
+
+    // Still cold: the second request gives up long before GITHUB_WAIT_MS.
+    let done = false;
+    const second = getNeedsYou().then((d) => {
+      done = true;
+      return d;
+    });
+    await vi.advanceTimersByTimeAsync(MISSED_WAIT_MS);
+    expect(done).toBe(true);
+    expect((await second).rows).toEqual([]);
+
+    // Warm now: the row shows, still without the full wait.
+    loadGitHub.mockResolvedValue({ github: github([pr({})]), fetchedAt: "" });
+    loadReleases.mockResolvedValue({
+      releases: { repos: [], runsUnread: [] },
+      fetchedAt: "",
+    });
+    const third = getNeedsYou();
+    await vi.advanceTimersByTimeAsync(MISSED_WAIT_MS);
+    const data = await third;
+    vi.useRealTimers();
+    expect(data.rows.map((r) => r.kind)).toEqual(["merge"]);
   });
 
   it("is not connected, with no freshness, until a source exists", async () => {

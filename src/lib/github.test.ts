@@ -20,6 +20,7 @@ const {
   getGitHub,
   headerAgent,
   prQueries,
+  readGitHub,
   toClaim,
   toItem,
   toReleases,
@@ -440,5 +441,32 @@ describe("headerAgent escapes", () => {
       "Bumble",
     );
     expect(headerAgent(header("Zoey"))).toBe("Arcee");
+  });
+});
+
+describe("readGitHub (#162)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("answers at once after a failed read, and retries after a minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetch = vi.fn(async () => new Response("{}", { status: 502 }));
+    vi.stubGlobal("fetch", fetch);
+
+    const first = await readGitHub();
+    expect(first.github).toBeNull();
+    const calls = fetch.mock.calls.length;
+    expect(calls).toBeGreaterThan(0);
+
+    expect(await readGitHub()).toEqual(first);
+    expect(fetch).toHaveBeenCalledTimes(calls);
+
+    vi.setSystemTime(Date.now() + 61_000);
+    await readGitHub();
+    expect(fetch.mock.calls.length).toBeGreaterThan(calls);
   });
 });
