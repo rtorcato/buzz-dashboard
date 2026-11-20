@@ -341,14 +341,14 @@ function OwnerStep({ onPass }: { onPass: () => void }) {
   );
 }
 
-type Check = {
+type CheckRow = {
   id: string;
   state: "ok" | "failed" | "skipped";
   title: string;
   detail?: string;
   relaySaid?: string;
 };
-type RelayResult = { ok: boolean; checks: Check[]; agents: string[] };
+type RelayResult = { ok: boolean; checks: CheckRow[]; agents: string[] };
 
 function RelayStep({ onPass }: { onPass: (ok: boolean) => void }) {
   const [url, setUrl] = useState("");
