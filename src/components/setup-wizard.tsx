@@ -16,6 +16,11 @@ import {
 import { nip19 } from "nostr-tools";
 import { useEffect, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
+import {
+  DoneCard,
+  FinishStep,
+  SourcesStep,
+} from "@/components/setup-wizard-sources";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,8 +32,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-// DESIGN.md → Setup wizard → The steps. Steps 1 to 3 are here; the rest land
-// in the next PR (#73 part 3c).
+// DESIGN.md → Setup wizard → The steps.
 const STEPS = [
   { name: "Dashboard key", line: "Its own read-only identity" },
   { name: "Owner", line: "You vouch for it, once" },
@@ -43,8 +47,11 @@ const shortNpub = (n: string) => `${n.slice(0, 12)}…${n.slice(-6)}`;
 export function SetupWizard() {
   const [step, setStep] = useState(0);
   const [done, setDone] = useState<boolean[]>(STEPS.map(() => false));
+  const [finished, setFinished] = useState<string | null>(null);
   const pass = (i: number, ok = true) =>
     setDone((d) => d.map((v, j) => (j === i ? ok : v)));
+
+  if (finished !== null) return <DoneCard host={finished} />;
 
   return (
     <div className="mx-auto grid w-full max-w-[1040px] gap-6 md:grid-cols-[240px_1fr] md:gap-10">
@@ -117,13 +124,9 @@ export function SetupWizard() {
             {step === 0 && <KeyStep onPass={() => pass(0)} />}
             {step === 1 && <OwnerStep onPass={() => pass(1)} />}
             {step === 2 && <RelayStep onPass={(ok) => pass(2, ok)} />}
-            {step > 2 && (
-              <>
-                <h1 className="text-xl font-semibold">{STEPS[step].name}</h1>
-                <p className="text-sm text-muted-foreground">
-                  This step lands in the next part of #73.
-                </p>
-              </>
+            {step === 3 && <SourcesStep />}
+            {step === 4 && (
+              <FinishStep onEdit={setStep} onFinished={setFinished} />
             )}
           </div>
           <div className="flex items-center justify-between gap-2 border-t pt-4 max-md:flex-col-reverse max-md:items-stretch">
@@ -138,14 +141,16 @@ export function SetupWizard() {
             ) : (
               <span />
             )}
-            <Button
-              className="h-10 max-md:h-11"
-              aria-disabled={!done[step] || step > 2}
-              disabled={!done[step] || step > 2}
-              onClick={() => setStep(step + 1)}
-            >
-              Continue <ChevronRight aria-hidden />
-            </Button>
+            {step < 4 && (
+              <Button
+                className="h-10 max-md:h-11"
+                aria-disabled={step !== 3 && !done[step]}
+                disabled={step !== 3 && !done[step]}
+                onClick={() => setStep(step + 1)}
+              >
+                Continue <ChevronRight aria-hidden />
+              </Button>
+            )}
           </div>
         </Card>
       </div>
