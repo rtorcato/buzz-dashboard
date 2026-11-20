@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
 import { AgentsView } from "@/components/agents-view";
 import { type Runtimes, runtimeFor } from "@/lib/agents";
+import { loadChannelMap } from "@/lib/channel-map";
+import { unreadableByAgent } from "@/lib/channels";
 import { loadHive } from "@/lib/hive";
 import { loadStatusFeed } from "@/lib/status-feed";
 
 export const metadata: Metadata = { title: "Agents · Hive" };
 
 export default async function AgentsPage() {
-  const [{ hive }, { feed, stale }] = await Promise.all([
+  const [{ hive }, { feed, stale }, { map }] = await Promise.all([
     loadHive(),
     loadStatusFeed(),
+    loadChannelMap(),
   ]);
   // The layout already shows the relay's Alert.
   if (!hive) return null;
@@ -27,6 +30,7 @@ export default async function AgentsPage() {
       now={Math.floor(Date.now() / 1000)}
       runtimes={runtimes}
       feed={feed && { publishedAt: feed.publishedAt, stale }}
+      elsewhere={map ? unreadableByAgent(map.rows) : {}}
     />
   );
 }

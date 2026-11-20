@@ -3,6 +3,7 @@ import {
   Bot,
   Coins,
   GitPullRequest,
+  Hash,
   HeartPulse,
   Images,
   LayoutDashboard,
@@ -11,8 +12,8 @@ import {
 } from "lucide-react";
 import type { NeedsYouKind, View } from "@/lib/needs-you";
 
-// Overview, Media and Cost never need the owner, so they have no count.
-export type Item = View | "overview" | "media" | "cost";
+// Overview, Media, Cost and Channels never need the owner, so they have no count.
+export type Item = View | "overview" | "media" | "cost" | "channels";
 
 /** The route of a view: Overview is the home at /. */
 export const viewHref = (view: Item) =>
@@ -39,6 +40,7 @@ export const VIEWS: {
   { view: "cost", label: "Cost", icon: Coins, history: true },
   { view: "timeline", label: "Timeline", icon: Activity },
   { view: "releases", label: "Releases", icon: Rocket },
+  { view: "channels", label: "Channels", icon: Hash },
   { view: "media", label: "Media", icon: Images },
 ];
 

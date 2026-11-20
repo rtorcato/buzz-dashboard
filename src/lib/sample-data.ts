@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ChannelMap, ChannelMember, ChannelRow } from "./channels";
 import type { Hive } from "./hive";
 import type { MediaEnv, MediaFile } from "./media";
 import type { NeedsYouRow } from "./needs-you";
@@ -97,6 +98,93 @@ export function sampleHive(): Hive {
     formerNames: [],
   }));
   return { agents, feed: [], hourly: Array(24).fill(0), channels: {} };
+}
+
+// Channels for the map: made-up names. Ember's "security" and Dune's
+// "research" are private and the sample dashboard isn't a member.
+export function sampleChannelMap(): ChannelMap {
+  const t = nowS();
+  const person: ChannelMember = {
+    pubkey: fakeKey("owner"),
+    name: null,
+    picture: null,
+  };
+  const members = (...names: string[]): ChannelMember[] => [
+    ...names.map((name) => ({ pubkey: fakeKey(name), name, picture: null })),
+    person,
+  ];
+  const app = { slug: "example-app", name: "example-app", shortLabel: "EA" };
+  const lib = { slug: "example-lib", name: "example-lib", shortLabel: "EL" };
+  const row = (
+    r: Partial<ChannelRow> & Pick<ChannelRow, "id" | "name">,
+  ): ChannelRow => ({
+    isPrivate: true,
+    archived: false,
+    readable: true,
+    scope: "unassigned",
+    project: null,
+    home: false,
+    members: [],
+    lastMessageAt: null,
+    ...r,
+  });
+  const rows: ChannelRow[] = [
+    row({
+      id: "c1",
+      name: "example-app",
+      scope: "project",
+      project: app,
+      home: true,
+      members: members("Atlas", "Cobalt", "Fern"),
+      lastMessageAt: t - 4 * 60,
+    }),
+    row({
+      id: "c2",
+      name: "example-lib",
+      scope: "project",
+      project: lib,
+      home: true,
+      readable: false,
+      members: members("Atlas", "Cobalt", "Ember"),
+      lastMessageAt: t - 40 * 60,
+    }),
+    row({
+      id: "c3",
+      name: "general",
+      isPrivate: false,
+      scope: "hive_wide",
+      members: members("Atlas", "Briar", "Cobalt", "Dune", "Ember", "Fern"),
+      lastMessageAt: t - 2 * 3600,
+    }),
+    row({
+      id: "c4",
+      name: "security",
+      scope: "hive_wide",
+      readable: false,
+      members: members("Atlas", "Ember"),
+      lastMessageAt: t - 3 * 3600,
+    }),
+    row({
+      id: "c5",
+      name: "research",
+      readable: false,
+      members: members("Atlas", "Dune"),
+      lastMessageAt: t - 70 * 60,
+    }),
+    row({
+      id: "c6",
+      name: "example-old",
+      archived: true,
+      scope: "project",
+      project: lib,
+      members: members("Atlas"),
+    }),
+  ];
+  return {
+    rows,
+    registry: true,
+    projects: [app, lib],
+  };
 }
 
 /** 30 days of messages per day, oldest first, for the agent page. */
