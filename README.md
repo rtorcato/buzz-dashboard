@@ -135,17 +135,34 @@ access.
 
 ### 2. Let it past relay auth (required)
 
-The relay refuses every query until the connection authenticates. Pick one:
+The relay refuses every query until the connection authenticates. Buzz desktop
+can't add a member by public key, so use an **owner attestation**. A relay
+member vouches for the dashboard's key, and the dashboard presents that proof.
 
-- **Make it a relay member** (simplest). Add the pubkey from step 1 as a member
-  of your relay. Nothing else is needed.
-- **Give it a NIP-OA owner attestation.** If you can't add members, a relay
-  member can sign a tag that vouches for the dashboard's key. Put the tag in
-  `BUZZ_AUTH_TAG` as JSON:
+1. Get the public key: `nak key public <BUZZ_PRIVATE_KEY>`. Send only that to
+   the owner. The private key never leaves the server.
+2. The owner opens **Settings → Buzz → Security → Authorize external
+   identity** in Buzz desktop and pastes the public key (hex). They select
+   **Authorize identity**, check the key, select **Authorize this key**, then
+   **Copy ownership proof**.
+3. Put the copied value in `BUZZ_AUTH_TAG`, unchanged:
 
-  ```sh
-  BUZZ_AUTH_TAG=["auth","<owner-hex>","<conditions>","<sig>"]
-  ```
+   ```sh
+   BUZZ_AUTH_TAG=["auth","<owner-hex>","","<sig>"]
+   ```
+
+   The empty conditions string is normal. An empty `BUZZ_AUTH_TAG=` counts as
+   unset and gives "Buzz relay refused auth".
+4. Recreate the container, since a restart keeps the old env:
+   `docker compose up -d --force-recreate <service>`.
+
+The proof is useless without the private key, so it is safe to send through
+chat. It has no expiry or kind limits, so authorize only this exact key. If
+relay membership is available to you another way, add the pubkey as a member
+and skip `BUZZ_AUTH_TAG`. Members only: the relay serves media to members, so
+relay-hosted avatars can stay blank with an attestation. R2 media is
+unaffected. Troubleshooting and an ordered checklist for an agent are in
+[Connect your Buzz relay](https://docs.torcato.dev/buzz-dashboard/docs/relay-identity).
 
 ### 3. Your owner pubkey (required)
 
