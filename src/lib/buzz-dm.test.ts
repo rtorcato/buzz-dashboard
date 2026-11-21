@@ -5,8 +5,15 @@ import type { ServerEnv } from "./env";
 
 vi.mock("server-only", () => ({}));
 
-const { dmSetup, dmText, httpAuth, openDm, relayHttpBase, sendDmMessage } =
-  await import("./buzz-dm");
+const {
+  cleanAlertText,
+  dmSetup,
+  dmText,
+  httpAuth,
+  openDm,
+  relayHttpBase,
+  sendDmMessage,
+} = await import("./buzz-dm");
 const { verifyEvent } = await import("./relay");
 
 const KEY = "11".repeat(32);
@@ -133,4 +140,17 @@ it("writes the alert as plain text", () => {
     "T\nD\nhttps://dash/health",
   );
   expect(dmText({ title: "T", detail: "", link: null })).toBe("T");
+});
+
+it("cleans forwarded alert text (#143)", () => {
+  expect(
+    dmText({
+      title: "PR \u202eevil\u0007\nby @rtorcato",
+      detail: "line one\r\nline\u0000 two @all",
+      link: null,
+    }),
+  ).toBe("PR evil by @\u200brtorcato\nline one\nline two @\u200ball");
+  expect(cleanAlertText("x".repeat(300), 200)).toHaveLength(200);
+  expect(cleanAlertText("x".repeat(300), 200).endsWith("…")).toBe(true);
+  expect(cleanAlertText("a @ b", 50)).toBe("a @ b");
 });

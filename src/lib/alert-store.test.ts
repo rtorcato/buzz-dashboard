@@ -340,6 +340,41 @@ it("sets up Buzz DM, and sends alerts as DMs to the owner (#83)", async () => {
   expect(kinds()).toEqual([9]);
 });
 
+it.each([429, 408, 500])(
+  "keeps the saved Buzz DM when the relay answers %i (#143)",
+  async (status) => {
+    await addChannel("buzz", "");
+    const noon = new Date(2026, 9, 23, 12).getTime();
+    await runAlerts(noon);
+    const saved = store.get("alert_dm");
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(new Response(null, { status }));
+    await runAlerts(noon + 3_600_000);
+    const kinds = (
+      fetchMock.mock.calls as unknown as [string, RequestInit][]
+    ).map(([, init]) => JSON.parse(String(init.body)).kind);
+    // No reopen: one failed message, no new DM, the saved id unchanged.
+    expect(kinds).toEqual([9]);
+    expect(store.get("alert_dm")).toEqual(saved);
+  },
+);
+
+it.each([404, 410])(
+  "reopens the Buzz DM when the relay answers %i (#143)",
+  async (status) => {
+    await addChannel("buzz", "");
+    const noon = new Date(2026, 9, 23, 12).getTime();
+    await runAlerts(noon);
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(new Response(null, { status }));
+    await runAlerts(noon + 3_600_000);
+    const kinds = (
+      fetchMock.mock.calls as unknown as [string, RequestInit][]
+    ).map(([, init]) => JSON.parse(String(init.body)).kind);
+    expect(kinds).toEqual([9, 41010, 9]);
+  },
+);
+
 it("refuses to set up Buzz DM without a usable key", async () => {
   vi.stubEnv("BUZZ_DM_PRIVATE_KEY", "not-hex");
   await expect(addChannel("buzz", "")).rejects.toThrow(AlertInputError);

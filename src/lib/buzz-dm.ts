@@ -160,12 +160,43 @@ export async function sendDmMessage(
   await publish(setup, MESSAGE_KIND, [["h", dm]], text, fetchImpl, now);
 }
 
+const TITLE_MAX = 200;
+const DETAIL_MAX = 1000;
+
+/**
+ * Makes upstream text safe to forward (#143): drops control characters
+ * (keeping newlines only where `multiline`) and bidi or zero-width
+ * marks, breaks `@` mentions with a
+ * zero-width space so they can't resolve, and caps the length.
+ */
+export function cleanAlertText(text: string, max: number, multiline = false) {
+  const kept = multiline
+    ? text.replace(/\r\n?/g, "\n").replace(/[^\P{Cc}\n]/gu, "")
+    : text.replace(/[\r\n\t]+/g, " ").replace(/\p{Cc}/gu, "");
+  const safe = kept
+    .replace(
+      /[\u200b\u200c\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff]/g,
+      "",
+    )
+    .replace(/@(?=\S)/g, "@\u200b")
+    .trim();
+  const chars = [...safe];
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : safe;
+}
+
 /** The text of one alert as a DM. */
 export const dmText = (a: {
   title: string;
   detail: string;
   link: string | null;
-}) => [a.title, a.detail, a.link].filter(Boolean).join("\n");
+}) =>
+  [
+    cleanAlertText(a.title, TITLE_MAX),
+    cleanAlertText(a.detail, DETAIL_MAX, true),
+    a.link,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
 /** Loads the env and returns the setup state; for the page and the sender. */
 export const loadDmSetup = () => dmSetup(readServerEnv());
