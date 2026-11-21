@@ -71,7 +71,7 @@ These replace the matching `.dark` values in Tokens. The `:root` light values ar
 
 `/` becomes Overview and Agents moves to `/agents`. Overview sits first in the sidebar with `layout-dashboard`. With more than one hive the route is `/h/<hive>`.
 
-1. **Greeting:** "Good afternoon" and a muted line, "11 agents working across 9 channels. One needs a look." The time of day follows Settings → Time → Time zone (Local or UTC). On the right, a `ToggleGroup` range: 24h, 7d, 30d, 90d, default 7d. Without the history store only 24h and 7d show, since the live reads cover 7 days.
+1. **Greeting:** "Good afternoon" and a muted line, "11 agents working across 9 channels. One needs a look." The time of day follows Settings → Time → Time zone (Local or UTC). So do the Overview's day and hour buckets and the heatmap: the browser sends its zone to the server in the `hive_tz` cookie, and without it they follow the server clock. On the right, a `ToggleGroup` range: 24h, 7d, 30d, 90d, default 7d. Without the history store only 24h and 7d show, since the live reads cover 7 days.
 2. **Needs you banner:** on Overview the Needs you card collapses to one row: an amber `triangle-alert` tile, "3 things need you", the items joined by " · " (muted), a stack of the involved agents' avatars and a ghost "Review all" (`chevron-down`). Same items, colours and order as Needs you. "Review all" expands the full card in place, with its row actions, footer and History, and the button becomes "Collapse". With zero items the banner becomes the green "All clear" line. Every other view keeps the full card at the top, and Settings still has none.
 3. **KPI row:** one card per metric, each with a tinted icon tile, label, value, a delta pill against the previous period of the same length (green up, red down, neutral grey for cost), and a 44px sparkline with the fade. The labels carry the range ("Messages · 7d").
    - **Active agents** (violet): now, from relay presence and the status feed, ranked the same as the Agents badges. Unknown agents aren't counted.
@@ -662,7 +662,7 @@ A gallery of every file the agents upload to the public R2 media bucket, served 
 | | Motion · System follows your OS reduce-motion setting. | ToggleGroup: System / Reduced / Full | System. Reduced turns off everything in Motion, the same as `prefers-reduced-motion: reduce`. |
 | **Time** · Logs and messages are recorded in UTC. | Timestamps | ToggleGroup: Relative / Absolute | Relative |
 | | Clock | ToggleGroup: 12h / 24h | follows the browser locale |
-| | Time zone | ToggleGroup: Local / UTC | Local. Under it, a mono preview chip shows the result ("Preview: 2h ago · Tue 14:05"). |
+| | Time zone | ToggleGroup: Local / UTC | Local. Under it, a mono preview chip shows the result ("Preview: 2h ago · Tue 14:05"). The only setting the server sees, through the `hive_tz` cookie, for the Overview's buckets. |
 | **Data and refresh** · The page re-reads the hive on this schedule. | Auto-refresh · Off still lets you refresh by hand. | ToggleGroup: Off / 30s / 1m / 5m | 1m (today's `REFRESH_EVERY_MS`) |
 | | Quiet after · An agent with no messages for this long shows as Quiet. | Select: 30 minutes, 1, 2, 4, 8 hours | 2 hours |
 | **Agents** · The Agents view and the default landing page. | Open on · The view you land on at /. | Select: Overview, Agents, Pipeline, Health, Cost, Timeline, Releases, Media (Health and Cost only with the history store) | Overview |
