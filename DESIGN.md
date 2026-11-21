@@ -696,7 +696,7 @@ What changed from the request in #58, as approved:
 A single `Card`, `max-w-[480px]`, centred 72px below the bar (24px on phones).
 
 - Title "Set up this dashboard", then "It isn’t connected to a relay yet. To prove you run it, paste the one-time setup token from the container logs."
-- "`square-terminal` Find it with", then a mono command block on `muted`, `docker compose logs dashboard | grep "setup token"`, with an outline "`copy` Copy" beside it. Hint: "The line looks like `setup token: 7Q2M-…-PB3W` (valid 60 min)".
+- "`square-terminal` Find it with", then a mono command block on `muted`, `docker compose logs dashboard | grep "setup token"`, with an outline "`copy` Copy" beside it. Hint: "The line looks like `setup token: 7Q2M-…-PB3W` (valid 60 min)". A second muted hint below it: "Running `pnpm dev`? It’s printed in that terminal. Restarting the server issues a new token."
 - "Setup token" `Input`, mono, placeholder `XXXX-XXXX-XXXX-XXXX`, focused on load.
 - A full-width primary "`lock` Unlock setup" `Button` (`size="lg"`).
 - Muted `text-xs` footer: "The token works once and runs out after 60 minutes. Restart the container for a new one. Setting the relay variables in env skips this page entirely." plus a "Configuration docs" link.
