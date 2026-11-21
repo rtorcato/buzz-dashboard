@@ -34,6 +34,13 @@ const server = spawn(
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       BUZZ_SAMPLE_DATA: "1",
+      // Placeholders that close the setup gate (#73), which would otherwise
+      // redirect every view to /setup. Sample mode never dials the relay, and
+      // the URL points at a closed local port in case anything ever does.
+      BUZZ_RELAY_URL: "ws://127.0.0.1:9",
+      BUZZ_PRIVATE_KEY: "1".repeat(64),
+      BUZZ_AUTH_TAG: "sample",
+      BUZZ_OWNER_PUBKEY: "2".repeat(64),
     },
     stdio: ["ignore", "inherit", "inherit"],
     detached: true,
