@@ -210,6 +210,7 @@ export async function muteItems(
 }
 
 const DM_KEY = "alert_dm";
+const DM_GONE = new Set([404, 410]);
 
 /** Sends a DM to the owner, opening the conversation the first time (#83). */
 async function deliverDm(text: string) {
@@ -224,11 +225,11 @@ async function deliverDm(text: string) {
     try {
       return await sendDmMessage(setup, known, text);
     } catch (err) {
-      // Only a 4xx means the DM is gone (hidden or deleted). A 5xx, timeout
-      // or network error is transient: rethrow so the next run retries it
-      // rather than opening a duplicate DM.
-      if (!(err instanceof RelayError && err.status >= 400 && err.status < 500))
-        throw err;
+      // Only a 404 or 410 means the DM is gone (hidden or deleted). Anything
+      // else (408, 429, a 5xx, a timeout, a network error) may be transient:
+      // rethrow so the next run retries it rather than opening a duplicate
+      // DM and overwriting the saved id (#143).
+      if (!(err instanceof RelayError && DM_GONE.has(err.status))) throw err;
       console.error(`Alert: Buzz DM ${known} failed, reopening: ${err}`);
     }
   }
