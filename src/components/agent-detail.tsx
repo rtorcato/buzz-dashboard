@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { AgentMessages } from "@/components/agent-messages";
+import { EditProfile } from "@/components/agent-profile";
 import { AgentSettings } from "@/components/agent-settings";
 import {
   Avatar,
@@ -77,7 +78,7 @@ export function AgentDetail({
   activity: number[] | null;
   /** GITHUB_OWNERS; the PR links hide without it. */
   owners: string[];
-  /** Signed in as the owner (the first admin): shows Agent settings. */
+  /** Signed in as the owner (the first admin): shows Agent settings and Edit profile. */
   admin?: boolean;
   /** Turns and errors per day for 30 days, or null without a source. */
   turns: { turns: number[]; errors: number[] } | null;
@@ -162,7 +163,7 @@ export function AgentDetail({
               </p>
               <MetaRow agent={a} runtime={runtime} now={now} />
             </div>
-            {(buzzUrl || prs !== null || prsUrl) && (
+            {(buzzUrl || prs !== null || prsUrl || admin) && (
               <div className="grid grid-cols-1 gap-2 sm:flex sm:shrink-0">
                 {buzzUrl && (
                   <OutLink href={buzzUrl} solid>
@@ -170,6 +171,7 @@ export function AgentDetail({
                   </OutLink>
                 )}
                 {prsUrl && <OutLink href={prsUrl}>PRs</OutLink>}
+                {admin && <EditProfile agent={a} />}
               </div>
             )}
           </div>
