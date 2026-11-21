@@ -14,6 +14,7 @@ The design spec for buzz-dashboard. Read it before writing any UI code, and keep
 - **Update:** Unknown presence and Archived agents, the Memory card, cost read with the owner's sign-in, config History and real hive icons, approved by rtorcato on 2026-11-11. Build them after sign-in, roles and the switcher, in this order: Unknown and Archived, Memory, Cost with your sign-in. History ships with Edit, once the hive runs Buzz 1.0.
 - **Update:** the Obsidian redesign (see Obsidian redesign), approved by rtorcato on 2026-11-19. It is a new visual layer, an Overview page at `/` and a few new charts, each with a named source. Every rule and data source above still applies. The lines it overrides below have been edited to match.
 - **Update:** the reworked setup Owner step (#175), approved by rtorcato on 2026-11-20. It replaces the extension signing flow with copy key, authorize in Buzz desktop, paste the proof.
+- **Update:** the Edit profile modal (#113) redrawn in the Obsidian look, approved by rtorcato on 2026-11-21. It adds the Desktop path as chips and a rename hint, and drops the "within a minute" caveat now that #112 has shipped. Its motion stays the plain fade and scale.
 - **Mockups:** kept outside the repo and not linked from it. This file is the spec, so build from the text below.
 
 ## Obsidian redesign (2026-11-19)
@@ -321,17 +322,20 @@ The dashboard can't publish a config revision yet (see "Check during the build" 
 
 ### Edit profile (#113)
 
-The avatar, display name and About live in the agent's own profile event, and only the agent's key can sign it. Buzz Desktop holds that key and this dashboard never does, so the dashboard points to Desktop the same way the #109 Agent settings card does: same modal shell, same steps, same buttons. Mockups: `buzz-dashboard/agent-profile-*` on R2.
+The avatar, display name and About live in the agent's own profile event, and only the agent's key can sign it. Buzz Desktop holds that key and this dashboard never does, so the dashboard points to Desktop the same way the #109 Agent settings card does: same modal shell, same steps, same buttons. Mockups: `buzz-dashboard/agent-profile-obsidian-*` on R2 (approved 2026-11-21; the older light `agent-profile-*` set is superseded).
 
 - **Button:** an outline "`user-pen` Edit profile", in the hero's row after Open channel and PRs. Admins only, like Agent settings. Viewers never see it.
-- **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Edit the profile in Buzz Desktop".
+- **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Edit the profile in Buzz Desktop", with the muted line "Bumble's picture, name and About are signed by its own key, so they change in Buzz Desktop."
   - A Change `Select` (Avatar, Display name, About), with the current avatar (`Avatar`, 40px) beside it when Avatar is picked.
   - Display name and About get a New value `Input` (About a `Textarea`), so the steps fill in live: "Set Display name to **Bumblebee**". Under it, a muted "Now Bumble" shows the current value.
-  - Three numbered steps with the agent's real name: "Open Buzz Desktop → Agents → **Bumble** → Edit", then "Click the avatar and pick a new image" (or "Set Display name to **…**"), then "Save. The new picture shows here within a minute."
+  - Three numbered steps with the agent's real name: "Open Buzz Desktop › Agents › **Bumble** › Edit", then "Click the avatar and pick a new image" (or "Set Display name to **…**"), then "Save. The new picture shows here."
+  - **Path chips:** every name Buzz Desktop shows in step 1 (Buzz Desktop, Agents, the agent's name, Edit) is a mono chip, the same style as the setup Owner step: `muted` background, 1px `border`, rounded, with a muted `›` between chips. The agent's name chip is 600 `foreground`. Copy steps writes the path as plain text with `›`.
+  - **Rename hint** (Display name only): a muted `info` line under the steps, "The agent page link follows the new name. The old link redirects." This is the redirect rule under Agent page routes.
   - A muted `key-round` line: "Only Bumble's own key can sign its profile. Buzz Desktop holds that key; this dashboard never does."
   - Buttons: outline "`copy` Copy steps" and primary "Done", the same as #109. Nothing is ever saved here.
+  - **Phone sheet:** Done and Copy steps stack as full-width 44px buttons, with Done on top.
 - **No deep link.** A dashboard in a container can't reach the Desktop app on your machine.
-- **Check during the build:** the "within a minute" line only holds once #112 (the avatar proxy) lands. Until then, relay pictures show as initials.
+- **Motion:** the plain fade and scale in the Motion table, the same as #109. No text morph on the steps.
 
 ### Saving
 
