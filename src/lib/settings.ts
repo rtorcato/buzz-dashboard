@@ -8,7 +8,7 @@ import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
 // DESIGN.md → Settings: browser preferences only. One versioned localStorage
-// key, nothing sent anywhere. Bump the key's version to drop old shapes.
+// key, nothing sent anywhere except the time zone, in a cookie (#153). Bump the key's version to drop old shapes.
 export const SETTINGS_KEY = "hive.settings.v1";
 
 export const VIEWS = [
