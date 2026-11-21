@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ChannelMap, ChannelMember, ChannelRow } from "./channels";
 import type { Hive } from "./hive";
+import type { Job, JobsFeed, RunDot } from "./jobs-parse";
 import type { MediaEnv, MediaFile } from "./media";
 import type { NeedsYouRow } from "./needs-you";
 import type { Runtime, StatusFeed } from "./status-feed";
@@ -286,4 +287,113 @@ export function sampleMedia(): MediaFile[] {
       modified,
     };
   });
+}
+
+const dots = (fail = 0): RunDot[] => [
+  ...Array<RunDot>(10 - fail).fill("ok"),
+  ...Array<RunDot>(fail).fill("fail"),
+];
+
+// name, purpose, schedule, next, minutes since last run, exit, wakes.
+const JOBS: [
+  string,
+  string,
+  string,
+  string,
+  number,
+  number,
+  [string, boolean][],
+][] = [
+  [
+    "morning-standup",
+    "Posts the weekday standup",
+    "Weekdays 09:00",
+    "next Mon 09:00",
+    420,
+    127,
+    [["Atlas", false]],
+  ],
+  [
+    "label-watch",
+    "Nudges stalled ai-* items",
+    "Every 15 min",
+    "next in 6 min",
+    9,
+    0,
+    [
+      ["Fern (old)", true],
+      ["Briar", false],
+    ],
+  ],
+  [
+    "ai-ready",
+    "Wakes Fern for new ai-ready issues",
+    "Every 2 min",
+    "next in 1 min",
+    1,
+    0,
+    [["Fern", false]],
+  ],
+  [
+    "limit-watch",
+    "Reads usage, pauses the hive at the limit",
+    "Every 2 min",
+    "next in 1 min",
+    1,
+    0,
+    [],
+  ],
+  [
+    "worktree-prune",
+    "Removes merged worktrees",
+    "Daily 10:00",
+    "next Sat 10:00",
+    360,
+    0,
+    [],
+  ],
+];
+
+export function sampleJobs(): JobsFeed {
+  const t = nowS();
+  const jobs: Job[] = JOBS.map(
+    ([name, purpose, schedule, next, ago, exit, wakes]) => ({
+      label: `example.hive.${name}`,
+      name,
+      purpose,
+      schedule,
+      next,
+      loaded: true,
+      paused: false,
+      missed: false,
+      missedAt: null,
+      lastRun: {
+        at: t - ago * 60,
+        exit,
+        durationS: 1.2,
+        logLine: exit ? `${name}.sh: line 42: tool: command not found` : "ok",
+      },
+      runs: dots(exit ? 2 : 0),
+      wakes: wakes.map(([w, stale]) => ({ name: w, stale })),
+      script: `bin/${name}.sh`,
+      log: `logs/${name}.log`,
+      installed: {
+        matches: name !== "worktree-prune",
+        ref: "config/launchd @ abc1234",
+      },
+    }),
+  );
+  jobs.push({
+    ...jobs[3],
+    label: "example.hive.daily-summary",
+    name: "daily-summary",
+    purpose: "Posts the end-of-day summary",
+    schedule: "Weekdays 17:00",
+    next: "next Mon 17:00",
+    missed: true,
+    missedAt: t - 26 * 3600,
+    lastRun: null,
+    runs: [],
+  });
+  return { publishedAt: t - 120, host: "M4 · example-mac", jobs };
 }
