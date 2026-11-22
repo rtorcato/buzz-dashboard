@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { readSavedConfig, saveConfig } from "@/lib/config-store";
+import { normaliseRelayUrl } from "@/lib/relay-url";
 import { SETUP_COOKIE, setupOpen, setupSessionLeft } from "@/lib/setup";
 import { checkRelay } from "@/lib/setup-relay";
 
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     url?: unknown;
   } | null;
-  const url = typeof body?.url === "string" ? body.url.trim() : "";
+  const url = typeof body?.url === "string" ? normaliseRelayUrl(body.url) : "";
   const saved = readSavedConfig();
   if (
     !saved.BUZZ_PRIVATE_KEY ||

@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { normaliseRelayUrl } from "@/lib/relay-url";
 
 // DESIGN.md → Setup wizard → The steps.
 const STEPS = [
@@ -607,8 +608,10 @@ function RelayStep({ onPass }: { onPass: (ok: boolean) => void }) {
   const [result, setResult] = useState<RelayResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function test(target: string) {
-    if (!target.trim()) return;
+  async function test(input: string) {
+    const target = normaliseRelayUrl(input);
+    if (!target) return;
+    setUrl(target);
     setBusy(true);
     setError(null);
     onPass(false);
@@ -648,6 +651,7 @@ function RelayStep({ onPass }: { onPass: (ok: boolean) => void }) {
               placeholder="wss://relay.example.com"
               spellCheck={false}
               className="font-mono"
+              aria-describedby="relay-url-hint"
             />
             <Button
               variant="outline"
@@ -659,6 +663,22 @@ function RelayStep({ onPass }: { onPass: (ok: boolean) => void }) {
             </Button>
           </div>
         </label>
+        <p id="relay-url-hint" className="text-xs text-muted-foreground">
+          It’s the address you open Buzz at, with{" "}
+          <code className="font-mono">wss://</code> in front. If your community
+          is at{" "}
+          <code className="font-mono">https://acme.communities.buzz.xyz</code>,
+          enter{" "}
+          <code className="font-mono">wss://acme.communities.buzz.xyz</code>.{" "}
+          <a
+            href="https://docs.torcato.dev/buzz-dashboard/docs/relay-identity#where-to-find-your-relay-url"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            How to find it
+          </a>
+        </p>
         {error && (
           <p role="alert" className="flex gap-1.5 text-xs text-destructive">
             <CircleX className="mt-0.5 size-3.5 shrink-0" aria-hidden />
