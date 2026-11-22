@@ -16,8 +16,8 @@ const FEATURES = [
 	{
 		id: 'needs-you',
 		kicker: 'Needs you',
-		title: 'The answer sits on top of every view.',
-		body: 'The Needs-you card is the first thing on every page, so you see what is waiting before you open a view.',
+		title: 'The answer opens Overview.',
+		body: 'The Needs-you card is the first thing on Overview, so you see what is waiting before you open a view.',
 		ticks: [
 			'Pull requests labelled merge-ready',
 			'A hive paused for usage, with a countdown to the reset',
@@ -76,7 +76,7 @@ const PILLARS = [
 	},
 	{
 		title: 'One question first',
-		body: '"Does anything need me right now?" The Needs-you card sits above every view.',
+		body: '"Does anything need me right now?" The Needs-you card opens Overview.',
 		icon: (
 			<>
 				<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />

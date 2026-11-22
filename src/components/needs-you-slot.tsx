@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import type { Mutes } from "@/lib/alerts";
 import type { LogRow } from "@/lib/cleared-log";
 import type { NeedsYou } from "@/lib/needs-you";
-import { oldestFirst } from "@/lib/needs-you-rows";
+import { needsYouSlotMode, oldestFirst } from "@/lib/needs-you-rows";
 import { chipLabel, scopeNeedsYou } from "@/lib/project-scope";
 
 export type BannerAgent = { name: string; picture: string | null };
@@ -19,11 +19,12 @@ export type BannerAgent = { name: string; picture: string | null };
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * DESIGN.md → Obsidian redesign → Overview: on Overview the Needs you card
- * starts as a one-row banner with the same items. "Review all" expands the
- * full card in place. Every other view, and Overview with nothing waiting,
- * shows the card as it is. With a project picked (#167) the rows, the banner
- * and its avatars are that project's, under a chip that clears the filter.
+ * DESIGN.md → Obsidian redesign → Overview: Needs you shows only on Overview
+ * (#190). There it starts as a one-row banner with the same items, and
+ * "Review all" expands the full card in place; with nothing waiting it's the
+ * card's "All clear" line. Every other view shows only the project chip. With
+ * a project picked (#167) the rows, the banner and its avatars are that
+ * project's, under a chip that clears the filter.
  */
 export function NeedsYouSlot({
   data,
@@ -39,12 +40,13 @@ export function NeedsYouSlot({
   /** Every agent the relay lists, for the banner's avatar stack. */
   agents: BannerAgent[];
 }) {
-  const onOverview = usePathname() === "/";
+  const pathname = usePathname();
   const { scope } = useProjectFilter();
   const [open, setOpen] = useState(false);
   const id = useId();
   const rows = oldestFirst(scopeNeedsYou(data.rows, scope));
   const titles = rows.map((r) => r.title);
+  const mode = needsYouSlotMode(pathname, titles.length);
   const text = rows.map((r) => `${r.title} ${r.detail}`).join(" ");
   const named = agents.filter((a) =>
     new RegExp(`\\b${escapeRe(a.name)}\\b`).test(text),
@@ -53,10 +55,14 @@ export function NeedsYouSlot({
     <NeedsYouCard data={data} now={now} cleared={cleared} snooze={snooze} />
   );
 
+  // Off Overview only the chip, unwrapped, so a page with no filter gets no
+  // empty block (and no extra gap) above its content.
+  if (mode === "none") return <ProjectChip />;
+
   return (
     <div className="space-y-3">
       <ProjectChip />
-      {!onOverview || titles.length === 0 ? (
+      {mode === "card" ? (
         card
       ) : (
         <div className="space-y-3">

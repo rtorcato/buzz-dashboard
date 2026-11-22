@@ -73,7 +73,7 @@ These replace the matching `.dark` values in Tokens. The `:root` light values ar
 `/` becomes Overview and Agents moves to `/agents`. Overview sits first in the sidebar with `layout-dashboard`. With more than one hive the route is `/h/<hive>`.
 
 1. **Greeting:** "Good afternoon" and a muted line, "11 agents working across 9 channels. One needs a look." The time of day follows Settings → Time → Time zone (Local or UTC). So do the Overview's day and hour buckets and the heatmap: the browser sends its zone to the server in the `hive_tz` cookie, and without it they follow the server clock. On the right, a `ToggleGroup` range: 24h, 7d, 30d, 90d, default 7d. Without the history store only 24h and 7d show, since the live reads cover 7 days.
-2. **Needs you banner:** on Overview the Needs you card collapses to one row: an amber `triangle-alert` tile, "3 things need you", the items joined by " · " (muted), a stack of the involved agents' avatars and a ghost "Review all" (`chevron-down`). Same items, colours and order as Needs you. "Review all" expands the full card in place, with its row actions, footer and History, and the button becomes "Collapse". With zero items the banner becomes the green "All clear" line. Every other view keeps the full card at the top, and Settings still has none.
+2. **Needs you banner:** on Overview the Needs you card collapses to one row: an amber `triangle-alert` tile, "3 things need you", the items joined by " · " (muted), a stack of the involved agents' avatars and a ghost "Review all" (`chevron-down`). Same items, colours and order as Needs you. "Review all" expands the full card in place, with its row actions, footer and History, and the button becomes "Collapse". With zero items the banner becomes the green "All clear" line. No other view shows Needs you (#190): the sidebar counts and the bell already flag pending items, and only the project chip stays when a filter is set.
 3. **KPI row:** one card per metric, each with a tinted icon tile, label, value, a delta pill against the previous period of the same length (green up, red down, neutral grey for cost), and a 44px sparkline with the fade. The labels carry the range ("Messages · 7d").
    - **Active agents** (violet): now, from relay presence and the status feed, ranked the same as the Agents badges. Unknown agents aren't counted.
    - **Messages** (cyan): from the relay.
@@ -97,7 +97,7 @@ These replace the matching `.dark` values in Tokens. The `:root` light values ar
   - **Cost chip**, unchanged, and still absent without a cost source.
   - A solid violet **Open in Buzz** button (`external-link`). The mockup's "Dispatch" label is dropped: the dashboard never posts, so the button only opens Buzz. It opens `BUZZ_WEB_URL`. Without that setting the button is not shown.
   - **Phones:** the search field becomes a `search` icon button that opens the palette, and Open in Buzz becomes an icon button with `aria-label="Open in Buzz"`.
-- **Sidebar:** the hive switcher stays at the top. The Views group is Overview, Agents, Pipeline, Health, Cost, Timeline, Releases and Media. Health and Cost still appear only with the history store. There is no Needs you item, because Needs you is the card on every view, and its counts stay on the views that own the items. Counts are solid `--primary` pills with white text, or solid `--destructive` with `--destructive-foreground` text when they are failures. The selected item gets the `--chip` fill and a 1px inset border. The footer is unchanged: the sign-in block, the "Read-only" or role line, then Settings. There is no "Workspace" group.
+- **Sidebar:** the hive switcher stays at the top. The Views group is Overview, Agents, Pipeline, Health, Cost, Timeline, Releases and Media. Health and Cost still appear only with the history store. There is no Needs you item, because Needs you lives on Overview, and its counts stay on the views that own the items. Counts are solid `--primary` pills with white text, or solid `--destructive` with `--destructive-foreground` text when they are failures. The selected item gets the `--chip` fill and a 1px inset border. The footer is unchanged: the sign-in block, the "Read-only" or role line, then Settings. There is no "Workspace" group.
 
 ### Agent page
 
@@ -120,7 +120,7 @@ Phones follow the existing phone rules in each section, one column. The Overview
 
 ## Principle
 
-It's a glanceable ops screen, and it answers one question first: **"does anything need me right now?"** The **Needs you** card sits above every view and is never hidden behind one. On Overview it starts as a one-row banner with the same items, which expands to the full card (see Obsidian redesign). Everything else is detail.
+It's a glanceable ops screen, and it answers one question first: **"does anything need me right now?"** The **Needs you** card sits at the top of Overview, the landing page (#190). It starts as a one-row banner with the same items, which expands to the full card (see Obsidian redesign). Everything else is detail.
 
 The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an outbound link, marked with the `external-link` icon, and the dashboard never posts to the relay or GitHub. The one exception to "never posts" is the opt-in Buzz DM alert channel (#45), which sends only to the owner with a posting key of its own, never the hive's. The other exception is the dashboard's own state, and only for the signed-in owner (#40): snooze and ack, alert channels and rules, custom stages, and the cost source with its ingest token. Viewers can't write anything, and signed-out visitors only ever see the sign-in page.
 
@@ -145,7 +145,7 @@ The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an 
   - A muted "Heads-up" footer line that isn't counted: an agent has held a claim but been quiet for more than 2 hours, or the status feed is stale ("Runtime feed is 38m old (is the runtime host asleep?)").
   - With zero items, the card collapses to one green "All clear" line (see States).
   - Open `merge-ready` PRs: neutral (`border-border bg-muted text-foreground`), `git-merge` icon. A merge-ready PR is waiting on a click, not a fault, and green would read as cleared. "2 PRs ready to merge", then the repo#number keys. It links to Pipeline. For most deployments they wait on the owner; one with a merge bot hides the row with `NEEDS_YOU_EXCLUDE_LABELS=merge-ready`.
-- **Needs you** stays above every view, at the top of the main column. On Overview it starts collapsed to the banner. Settings is the one page without it, because the sidebar counts already show.
+- **Needs you** shows only on Overview, at the top of the main column, starting collapsed to the banner (#190). Every other view, Settings included, leaves it out, because the sidebar counts and the bell already show.
 
 ## Sidebar (#58)
 
@@ -224,7 +224,7 @@ Each Agents card gets a row between its header and "Working on", in a bordered `
 
 ## Agent page (#27)
 
-The route is `/agents/[name]`, where `name` is the lowercased display name with spaces as hyphens (`/agents/optimus-prime`). Renamed agents redirect from their old name (`/agents/fizz`). With more than one hive the route is `/h/<hive>/agents/<name>` (see Hive switcher). The shell (header, Needs you, sidebar) stays, with Agents active in the sidebar. See Agent page under Obsidian redesign for the hero, KPI and chart changes. For viewers it's read-only, so every action is an outbound link. Admins also get Edit (see Editing agents).
+The route is `/agents/[name]`, where `name` is the lowercased display name with spaces as hyphens (`/agents/optimus-prime`). Renamed agents redirect from their old name (`/agents/fizz`). With more than one hive the route is `/h/<hive>/agents/<name>` (see Hive switcher). The shell (header, sidebar) stays, with Agents active in the sidebar. See Agent page under Obsidian redesign for the hero, KPI and chart changes. For viewers it's read-only, so every action is an outbound link. Admins also get Edit (see Editing agents).
 
 - **Breadcrumb** (shadcn `Breadcrumb`): "← Agents › Bumble". The back link is a `h-9` target.
 - **Stalled alert:** only when the agent is stopped with open claims. A destructive `Alert` with `power-off`: "Bumble stopped 3h 05m ago while holding 2 claims", then "Restart it from Buzz Desktop, or ask Prime to reassign the claims. This page is read-only."
@@ -423,7 +423,7 @@ The runtime and usage data come from one JSON file, object key `hive/status.json
 
 Timeline search, Health, Cost, the Pipeline Flow tab, Needs-you history and Alerts all read the optional Postgres history store (#39). Shared rules:
 
-- **Needs you stays on top** of Health, Cost and Timeline like every other view.
+- **No Needs you** on Health, Cost or Timeline; it lives on Overview only (#190).
 - **Range:** each history view has a `ToggleGroup` range at the top right (Health 1h / 24h / 7d, Cost and Flow 7d / 30d / 90d). Retention defaults to 90 days, so a range never reaches past it.
 - **Source line:** a muted `text-xs` line at the top left says where the numbers come from, with an icon: "`radio` From the relay: turn metrics and presence · live", "`database` History from the database · since Sep 30".
 - **Never a made-up number.** A metric whose source isn't connected shows a dashed box with its name, a one-line description and "not connected" in mono, with no value, no zero and no skeleton. Each view ends with one "Connect a source" outline `Button` (`plug-zap`) that opens Settings → Sources.
@@ -515,7 +515,7 @@ The Flow tab answers "where do PRs wait?", for any repo and with no setup.
 
 `/releases`. Per watched repo: the latest tag, what has merged since it, the release run and the last npm publish. It reuses the GitHub reads in `src/lib/github.ts` and the same refresh cadence. It's read-only, so approving a release always opens GitHub.
 
-- **Shell:** the normal one, with Needs you on top. Releases already owns the "release waiting for approval" and "Red CI on `main`" Needs-you rows, so its sidebar count is those two.
+- **Shell:** the normal one; Needs you stays on Overview (#190). Releases already owns the "release waiting for approval" and "Red CI on `main`" Needs-you rows, so its sidebar count is those two.
 - **Stats:** 4 stat `Card`s (2 by 2 on phones).
   - **Waiting for approval** (`rocket`): the count, then "`example-lib` v2.4.0 · 5h" for the oldest.
   - **Unreleased changes** (`git-compare`): "3 repos", then "15 releasing commits on `main`".
@@ -885,7 +885,7 @@ It stays inside Docusaurus: only `src/pages/index.tsx` and `index.module.css` ch
    - CTAs: primary "Get started →" to `/docs/quick-start`, secondary "View on GitHub" to the repo.
    - A browser frame below the CTAs: 38px bar with three dots and a fake URL `hive.your-network.internal/agents` in mono, then the Agents screenshot. 1px `--jt-border` border, 14px top radius, no bottom border, a soft drop shadow, and a 120px fade into the page background at the bottom. A faint accent radial glow (14% light, 18% dark) sits behind the hero.
 2. **"What you get today"**: kicker, `h2` "One page instead of every channel.", sub "Built for people running several agents that open issues and PRs. These are real views, shown with sample data." Then four feature rows, alternating image side (5fr copy / 7fr image, 56px gap, 72px between rows). Each row has a mono uppercase kicker in the accent, an `h3`, one paragraph and 2–3 ticks (an 18px accent-tinted check tile). Images sit in a 14px-radius bordered card with the same shadow.
-   - **Needs you** (image right): "The answer sits on top of every view." Ticks: pull requests labelled merge-ready; a hive paused for usage, with a countdown to the reset; usage meters for the 5-hour and 7-day windows. Image: the Needs-you card crop.
+   - **Needs you** (image right): "The answer opens Overview." Ticks: pull requests labelled merge-ready; a hive paused for usage, with a countdown to the reset; usage meters for the 5-hour and 7-day windows. Image: the Needs-you card crop.
    - **Agents** (image left): "Every agent at a glance." Ticks: running or stopped, uptime and last turn; what it is working on, from its latest message; home channel, messages today and a 7-day sparkline. Image: the agent grid crop.
    - **Agent page** (image right): "Drill into one agent." No ticks. "Runtime, model and activity over 7, 14 or 30 days. Claims and recent PRs join this page with the GitHub reader."
    - **Media** (image left): "Mockups and screenshots, by repo and day." No ticks. "Point it at your R2 bucket and every upload shows up within a minute, grouped by repo and date, with a copy-link button on each file."

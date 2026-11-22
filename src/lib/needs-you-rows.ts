@@ -148,3 +148,17 @@ export function rowFor(row: NeedsYouRow, items: RowItem[]): NeedsYouRow {
       return row;
   }
 }
+
+/**
+ * What the Needs you slot shows on a page (#190). Only Overview (`/`) gets
+ * Needs you: the one-row banner, or the full card (the "All clear" line) when
+ * nothing is waiting. Every other view shows none of it; the sidebar counts
+ * and the bell already flag pending items.
+ */
+export function needsYouSlotMode(
+  pathname: string | null,
+  items: number,
+): "banner" | "card" | "none" {
+  if (pathname !== "/") return "none";
+  return items > 0 ? "banner" : "card";
+}

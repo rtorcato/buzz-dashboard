@@ -12,9 +12,9 @@ It never posts to your relay, and never labels, merges or releases anything on G
 
 ## What you see
 
-Every view starts with a **Needs you** card that answers one question first: does anything need me right now? Today it lists a paused hive, `merge-ready` pull requests and failing agents. Blocked issues, release approvals and red CI on `main` aren't read yet, so the card never says "All clear". With the history store, the signed-in owner can snooze or acknowledge a row.
+Overview starts with a **Needs you** card that answers one question first: does anything need me right now? Today it lists a paused hive, `merge-ready` pull requests and failing agents. Blocked issues, release approvals and red CI on `main` aren't read yet, so the card never says "All clear". With the history store, the signed-in owner can snooze or acknowledge a row.
 
-Under it are these views. *History* marks the ones that need the optional [history store](./optional-views.md#history-store):
+The views are these. *History* marks the ones that need the optional [history store](./optional-views.md#history-store):
 
 | View | Shows |
 |---|---|

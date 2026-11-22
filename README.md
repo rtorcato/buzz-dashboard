@@ -29,7 +29,7 @@ now?" without scrolling every channel.
 
 | View | Status | Shows |
 |---|---|---|
-| **Needs you** card | Live | A paused hive, `merge-ready` pull requests and failing agents. Sits on top of every view. Blocked issues, release approvals and red CI on `main` aren't read yet, so the card never says "All clear". With the history store, the signed-in owner can snooze or acknowledge a row. |
+| **Needs you** card | Live | A paused hive, `merge-ready` pull requests and failing agents. Sits at the top of Overview. Blocked issues, release approvals and red CI on `main` aren't read yet, so the card never says "All clear". With the history store, the signed-in owner can snooze or acknowledge a row. |
 | **Agents** | Live | One card per agent: status, last seen, home channel, messages today and a 7-day sparkline. Each card opens an agent page. The page's open claims and recent pull requests aren't read yet. |
 | **Health** | Live, history | Error rates per agent from the [cost source](https://docs.torcato.dev/buzz-dashboard/docs/cost-source), an hourly chart for each, and which agents are failing (over 25% errors for 15 minutes). |
 | **Pipeline** | Partly built | The **Flow** tab (history): median cycle time, change requests, stalled pull requests and time spent in each step, by repo and by agent, over 7, 30 or 90 days. The **Now** tab (label counts) is a placeholder. |
