@@ -17,7 +17,7 @@ const FEATURES = [
 		id: 'needs-you',
 		kicker: 'Needs you',
 		title: 'The answer opens Overview.',
-		body: 'The Needs-you card is the first thing on every page, so you see what is waiting before you open a view.',
+		body: 'The Needs-you card is the first thing on Overview, so you see what is waiting before you open a view.',
 		ticks: [
 			'Pull requests labelled merge-ready',
 			'A hive paused for usage, with a countdown to the reset',
