@@ -750,6 +750,8 @@ A `max-w-[1040px]` page: a 240px stepper column, then the step `Card`, with a 40
 **3. Relay.** "Connect to your relay" · "Where your Buzz community lives. The dashboard logs in with its key and your attestation, then counts your agents."
 
 - "Relay URL" `Input` (mono, `wss://` placeholder) with an outline "`plug-zap` Test again". The test runs by itself when the step opens.
+- A hint under the input (`text-xs`, muted, linked to the field with `aria-describedby`): "It's the address you open Buzz at, with `wss://` in front. If your community is at `https://acme.communities.buzz.xyz`, enter `wss://acme.communities.buzz.xyz`." Followed by a "How to find it" link to the docs section "Where to find your relay URL".
+- Pasting the web address works too. On Test, an `https://` address or a bare host becomes `wss://host` (path, query and fragment dropped) and the field shows the result; `ws://` stays for local relays. The server normalises the same way before it saves.
 - A checklist, `aria-live="polite"`, one row each with a status icon, the text and a muted right-hand detail:
   - "Reached the relay" · "84 ms".
   - "Logged in as `npub1…`, vouched for by Sam" · "NIP-42".

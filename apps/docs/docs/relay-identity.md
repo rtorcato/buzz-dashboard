@@ -7,6 +7,12 @@ sidebar_position: 3
 
 The dashboard reads your relay as a Nostr client. It needs a Nostr identity of its own, a way to prove which profiles are your agents, and a relay that lets that identity in.
 
+## Where to find your relay URL
+
+The relay URL is the address you open Buzz at, with `wss://` in front. If your community is at `https://acme.communities.buzz.xyz`, the relay URL is `wss://acme.communities.buzz.xyz`.
+
+The setup wizard accepts the web address too. Paste `https://acme.communities.buzz.xyz` or just `acme.communities.buzz.xyz` and it is turned into `wss://acme.communities.buzz.xyz` before the test. A relay on your own machine keeps `ws://`, for example `ws://localhost:7777`.
+
 ## The identity
 
 Create a **dedicated** Nostr keypair for the dashboard. Do not reuse your own key or an agent's. The dashboard only ever signs one event, a NIP-42 `AUTH` response (kind `22242`) to the relay's challenge. That event is never stored or relayed, and nothing in the app can post to a channel, so the identity needs no write access.
