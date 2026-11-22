@@ -75,6 +75,49 @@ describe("agentStatus", () => {
   });
 });
 
+describe("Active elsewhere (#168)", () => {
+  const running = {
+    state: "running",
+    since: NOW - 5 * 3600,
+    lastTurn: NOW - 60,
+    model: null,
+  } as const;
+  const quietAgent = agent("a", 3 * 3600);
+  it("replaces Quiet when the runtime is working and a channel is unreadable", () => {
+    expect(agentStatus(quietAgent, NOW, running, undefined, ["repo"])).toBe(
+      "elsewhere",
+    );
+  });
+  it("stays Quiet with no unreadable channel", () => {
+    expect(agentStatus(quietAgent, NOW, running, undefined, [])).toBe("quiet");
+  });
+  it("stays Quiet with no runtime evidence", () => {
+    expect(agentStatus(quietAgent, NOW, undefined, undefined, ["repo"])).toBe(
+      "quiet",
+    );
+  });
+  it("leaves Active and Stopped alone", () => {
+    expect(agentStatus(agent("a", 60), NOW, running, undefined, ["repo"])).toBe(
+      "active",
+    );
+    expect(
+      agentStatus(
+        quietAgent,
+        NOW,
+        { ...running, state: "stopped" },
+        undefined,
+        ["repo"],
+      ),
+    ).toBe("stopped");
+  });
+  it("no longer counts the agent as quiet in the stats", () => {
+    const stats = agentStats([quietAgent], NOW, { a: running }, undefined, {
+      a: ["repo"],
+    });
+    expect(stats.quiet).toEqual([]);
+  });
+});
+
 describe("sortAgents", () => {
   const list = [
     agent("Bee", 60),

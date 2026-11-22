@@ -1,18 +1,28 @@
 import {
   Activity,
   Bot,
+  CalendarClock,
   Coins,
   GitPullRequest,
+  Hash,
   HeartPulse,
   Images,
+  Layers,
   LayoutDashboard,
   type LucideIcon,
   Rocket,
 } from "lucide-react";
 import type { NeedsYouKind, View } from "@/lib/needs-you";
 
-// Overview, Media and Cost never need the owner, so they have no count.
-export type Item = View | "overview" | "media" | "cost";
+// Overview, Projects, Media, Cost, Jobs and Channels never need the owner, so they have no count.
+export type Item =
+  | View
+  | "overview"
+  | "projects"
+  | "media"
+  | "cost"
+  | "channels"
+  | "jobs";
 
 /** The route of a view: Overview is the home at /. */
 export const viewHref = (view: Item) =>
@@ -33,12 +43,16 @@ export const VIEWS: {
   history?: true;
 }[] = [
   { view: "overview", label: "Overview", icon: LayoutDashboard },
+  // The registry lives in the history store, like Health and Cost (#166).
+  { view: "projects", label: "Projects", icon: Layers, history: true },
   { view: "agents", label: "Agents", icon: Bot },
   { view: "pipeline", label: "Pipeline", icon: GitPullRequest },
   { view: "health", label: "Health", icon: HeartPulse, history: true },
   { view: "cost", label: "Cost", icon: Coins, history: true },
   { view: "timeline", label: "Timeline", icon: Activity },
   { view: "releases", label: "Releases", icon: Rocket },
+  { view: "jobs", label: "Jobs", icon: CalendarClock },
+  { view: "channels", label: "Channels", icon: Hash },
   { view: "media", label: "Media", icon: Images },
 ];
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/server", () => ({ connection: async () => {} }));
@@ -9,6 +9,7 @@ const {
   nextTag,
   packageNameOf,
   parseCommit,
+  readReleases,
   redCiOf,
   runState,
   sortRepos,
@@ -313,5 +314,34 @@ describe("detailQuery", () => {
     expect(q).toContain("$o0: String!, $n0: String!, $o1: String!");
     expect(q).toContain("r1: repository(owner: $o1, name: $n1) { ...D }");
     expect(q).toContain("fragment D on Repository");
+  });
+});
+
+describe("readReleases (#162)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it("answers at once after a failed read, and retries after a minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.stubEnv("GITHUB_OWNERS", "acme");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetch = vi.fn(async () => new Response("{}", { status: 502 }));
+    vi.stubGlobal("fetch", fetch);
+
+    const first = await readReleases();
+    expect(first.releases).toBeNull();
+    const calls = fetch.mock.calls.length;
+    expect(calls).toBeGreaterThan(0);
+
+    expect(await readReleases()).toEqual(first);
+    expect(fetch).toHaveBeenCalledTimes(calls);
+
+    vi.setSystemTime(Date.now() + 61_000);
+    await readReleases();
+    expect(fetch.mock.calls.length).toBeGreaterThan(calls);
   });
 });

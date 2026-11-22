@@ -7,9 +7,15 @@ import {
   OVERVIEW_RANGES,
   type OverviewRange,
 } from "./overview-range";
+import {
+  startOfDay,
+  startOfHour,
+  systemTimeZone,
+  zoneParts,
+} from "./time-zone";
 
 // DESIGN.md → Obsidian redesign → Overview. Times are unix seconds, and day
-// and hour buckets follow the server clock, like "Today" on the other views.
+// and hour buckets follow `timeZone`: the viewer's Settings → Time zone (#153).
 
 export {
   countInto,
@@ -29,11 +35,14 @@ export type Buckets = {
 };
 
 /** Hourly buckets over the last 24 hours, or local days over the range. */
-export function bucketsFor(range: OverviewRange, now: Date): Buckets {
+export function bucketsFor(
+  range: OverviewRange,
+  now: Date,
+  timeZone = systemTimeZone(),
+): Buckets {
+  const at = now.getTime() / 1000;
   if (range === "24h") {
-    const h = new Date(now);
-    h.setMinutes(0, 0, 0);
-    const top = h.getTime() / 1000;
+    const top = startOfHour(at, timeZone);
     return {
       unit: "hour",
       starts: Array.from({ length: 24 }, (_, i) => top - (23 - i) * 3600),
@@ -42,12 +51,9 @@ export function bucketsFor(range: OverviewRange, now: Date): Buckets {
   const days = OVERVIEW_RANGES[range];
   return {
     unit: "day",
-    starts: Array.from({ length: days }, (_, i) => {
-      const d = new Date(now);
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - (days - 1 - i));
-      return d.getTime() / 1000;
-    }),
+    starts: Array.from({ length: days }, (_, i) =>
+      startOfDay(at, timeZone, days - 1 - i),
+    ),
   };
 }
 
@@ -137,12 +143,16 @@ export function spendByModel(rows: CostRow[]): Spend {
   };
 }
 
-/** Messages by weekday (0 = Sunday) and local hour, 7 × 24. */
-export function weekHourGrid(times: number[], weeks = 1): number[][] {
+/** Messages by weekday (0 = Sunday) and hour in `timeZone`, 7 × 24. */
+export function weekHourGrid(
+  times: number[],
+  weeks = 1,
+  timeZone = systemTimeZone(),
+): number[][] {
   const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
   for (const t of times) {
-    const d = new Date(t * 1000);
-    grid[d.getDay()][d.getHours()]++;
+    const p = zoneParts(t, timeZone);
+    grid[p.weekday][p.hour]++;
   }
   if (weeks <= 1) return grid;
   return grid.map((row) => row.map((n) => Math.round((n / weeks) * 10) / 10));

@@ -4,8 +4,9 @@ import { AppEffects } from "@/components/app-effects";
 import { AppSidebar } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { HeaderActions } from "@/components/header-actions";
-import { NeedsYouCard } from "@/components/needs-you-card";
-import { type BannerAgent, NeedsYouSlot } from "@/components/needs-you-slot";
+import { NeedsYouSlot } from "@/components/needs-you-slot";
+import { ProjectsProvider } from "@/components/project-context";
+import { ProjectSwitcher } from "@/components/project-switcher";
 import { SourceDown } from "@/components/states";
 import {
   SidebarInset,
@@ -25,10 +26,10 @@ import {
   getNeedsYou,
   KIND_VIEW,
   type NeedsYouRow,
-  oldestFirst,
 } from "@/lib/needs-you";
 import { npubEncode } from "@/lib/npub";
 import type { PaletteItem } from "@/lib/palette";
+import { loadScopeProjects } from "@/lib/project-data";
 import { failingViews, viewHref, visibleViews } from "@/lib/views";
 
 export default async function ViewsLayout({
@@ -36,7 +37,7 @@ export default async function ViewsLayout({
 }: {
   children: ReactNode;
 }) {
-  const [needsYou, costToday, jar, owner, mutes, cleared, { hive }] =
+  const [needsYou, costToday, jar, owner, mutes, cleared, { hive }, projects] =
     await Promise.all([
       getNeedsYou(),
       readCostToday(),
@@ -46,6 +47,7 @@ export default async function ViewsLayout({
       readCleared(),
       // Already read for Needs you, so the palette costs no extra relay read.
       loadHive(),
+      loadScopeProjects(),
     ]);
   const mode = authMode();
   const now = Date.now();
@@ -54,48 +56,56 @@ export default async function ViewsLayout({
 
   return (
     <TooltipProvider>
-      {/* The sidebar's own cookie remembers expanded or collapsed. */}
-      <SidebarProvider
-        defaultOpen={jar.get("sidebar_state")?.value !== "false"}
-      >
-        <AppSidebar
-          counts={counts}
-          failing={failingViews(needsYou.rows, KIND_VIEW)}
-          history={history}
-          signIn={
-            mode && {
-              mode,
-              owner:
-                owner?.via === "nostr"
-                  ? { via: "nostr", npub: npubEncode(owner.pubkey) }
-                  : owner,
+      <ProjectsProvider projects={projects}>
+        {/* The sidebar's own cookie remembers expanded or collapsed. */}
+        <SidebarProvider
+          defaultOpen={jar.get("sidebar_state")?.value !== "false"}
+        >
+          <AppSidebar
+            counts={counts}
+            failing={failingViews(needsYou.rows, KIND_VIEW)}
+            history={history}
+            signIn={
+              mode && {
+                mode,
+                owner:
+                  owner?.via === "nostr"
+                    ? { via: "nostr", npub: npubEncode(owner.pubkey) }
+                    : owner,
+              }
             }
-          }
-        />
-        <SidebarInset className="page-glow min-w-0">
-          <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
-            <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4 sm:px-6">
-              <SidebarTrigger className="-ml-2 size-9 md:size-8" />
-              <span className="h-5 w-px bg-border" aria-hidden />
-              <CommandPalette
-                items={paletteItems(history, hive?.agents ?? [], needsYou.rows)}
-              />
-              <HeaderActions
-                updatedAt={needsYou.updatedAt}
-                costToday={costToday}
-                buzzUrl={buzzWebUrl()}
-              />
-            </div>
-          </header>
-          <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-6 px-4 py-6 sm:px-6">
-            <NeedsYouSlot
-              titles={oldestFirst(needsYou.rows).map((r) => r.title)}
-              agents={bannerAgents(hive?.agents ?? [], needsYou.rows)}
-            >
-              <NeedsYouCard
+          />
+          <SidebarInset className="page-glow min-w-0">
+            <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
+              <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4 sm:px-6">
+                <SidebarTrigger className="-ml-2 size-9 md:size-8" />
+                <span className="h-5 w-px bg-border" aria-hidden />
+                {projects.length > 0 && (
+                  <ProjectSwitcher rows={needsYou.rows} />
+                )}
+                <CommandPalette
+                  items={paletteItems(
+                    history,
+                    hive?.agents ?? [],
+                    needsYou.rows,
+                  )}
+                />
+                <HeaderActions
+                  updatedAt={needsYou.updatedAt}
+                  costToday={costToday}
+                  buzzUrl={buzzWebUrl()}
+                />
+              </div>
+            </header>
+            <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-6 px-4 py-6 sm:px-6">
+              <NeedsYouSlot
                 data={needsYou}
                 now={now}
                 cleared={cleared}
+                agents={(hive?.agents ?? []).map((a) => ({
+                  name: a.name,
+                  picture: a.picture,
+                }))}
                 snooze={
                   mutes && {
                     mutes,
@@ -104,17 +114,19 @@ export default async function ViewsLayout({
                   }
                 }
               />
-            </NeedsYouSlot>
-            {needsYou.failures.map((f) => (
-              <SourceDown key={f.source} source={f.source}>
-                {f.detail}
-              </SourceDown>
-            ))}
-            {children}
-          </main>
-        </SidebarInset>
-        <AppEffects needsYou={needsYou.rows.reduce((n, r) => n + r.count, 0)} />
-      </SidebarProvider>
+              {needsYou.failures.map((f) => (
+                <SourceDown key={f.source} source={f.source}>
+                  {f.detail}
+                </SourceDown>
+              ))}
+              {children}
+            </main>
+          </SidebarInset>
+          <AppEffects
+            needsYou={needsYou.rows.reduce((n, r) => n + r.count, 0)}
+          />
+        </SidebarProvider>
+      </ProjectsProvider>
     </TooltipProvider>
   );
 }
@@ -196,13 +208,3 @@ function paletteItems(
   );
   return [...views, ...people, ...prs];
 }
-
-// The Overview banner's avatar stack: the agents a Needs you row names.
-function bannerAgents(agents: Agent[], rows: NeedsYouRow[]): BannerAgent[] {
-  const text = rows.map((r) => `${r.title} ${r.detail}`).join(" ");
-  return agents
-    .filter((a) => new RegExp(`\\b${escapeRe(a.name)}\\b`).test(text))
-    .map((a) => ({ name: a.name, picture: a.picture }));
-}
-
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

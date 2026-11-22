@@ -8,6 +8,7 @@ import {
   OctagonAlert,
 } from "lucide-react";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { Avatar } from "@/components/agents-view";
 import { type Kpi, KpiCard } from "@/components/kpi-card";
@@ -22,6 +23,7 @@ import {
   OpenOnRedirect,
   OverviewAgents,
   OverviewRangeToggle,
+  SyncTimeZone,
 } from "@/components/overview-client";
 import { Card } from "@/components/ui/card";
 import { formatAge } from "@/lib/age";
@@ -72,20 +74,30 @@ import {
   weekHourGrid,
 } from "@/lib/overview";
 import { dayName, hourLabel } from "@/lib/overview-range";
+import { loadRequestScope } from "@/lib/project-data";
+import { scopeNeedsYou } from "@/lib/project-scope";
 import { one } from "@/lib/query";
 import { loadStatusFeed, type Runtime } from "@/lib/status-feed";
+import {
+  resolveTimeZone,
+  startOfDay,
+  TIME_ZONE_COOKIE,
+  zoneParts,
+} from "@/lib/time-zone";
 import { liveEvents, type Names, type Row, toRow } from "@/lib/timeline";
 
 export const metadata: Metadata = { title: "Overview · Hive" };
 
 const DAY_S = 86_400;
-// Day and hour labels follow the server clock, like "Today" on the other views.
-const dayLabel = (at: number) =>
+// Day and hour labels follow the viewer's Settings → Time zone (#153).
+const dayLabel = (at: number, timeZone: string) =>
   new Date(at * 1000).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    timeZone,
   });
-const hourOf = (at: number) => hourLabel(new Date(at * 1000).getHours(), true);
+const hourOf = (at: number, timeZone: string) =>
+  hourLabel(zoneParts(at, timeZone).hour, true);
 
 // DESIGN.md → Obsidian redesign → Overview. Each section reads one named
 // source and shows nothing when that source isn't connected.
@@ -95,14 +107,16 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   const range = parseRange(one(params.range), history);
   const nowD = new Date();
   const now = Math.floor(nowD.getTime() / 1000);
-  const buckets = bucketsFor(range, nowD);
+  // The browser sends Settings → Time zone (#153); without it, the server's.
+  const sentZone = (await cookies()).get(TIME_ZONE_COOKIE)?.value ?? null;
+  const timeZone = resolveTimeZone(sentZone);
+  const buckets = bucketsFor(range, nowD, timeZone);
   const starts = buckets.starts;
   const span = range === "24h" ? DAY_S : OVERVIEW_RANGES[range] * DAY_S;
   const from = range === "24h" ? now - DAY_S : starts[0];
   const prevFrom = from - span;
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const [{ hive }, { feed }, { github }, needsYou, costOn, source] =
+  const [{ hive }, { feed }, { github }, needsYou, costOn, source, { scope }] =
     await Promise.all([
       loadHive(),
       loadStatusFeed(),
@@ -110,6 +124,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
       getNeedsYou(),
       costConnected().catch(() => false),
       healthSource().catch(() => null),
+      loadRequestScope(params),
     ]);
   // The layout already shows the relay's Alert.
   if (!hive) return <OpenOnRedirect />;
@@ -128,11 +143,18 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
 
   // Messages: the relay covers 7 days, so 24h (and 7d without the store) read
   // it; 30d and 90d read the history store.
-  // The agents' per-day counts, the same numbers the Agents view shows. They
-  // cover the 7 days of dayStarts, oldest first.
-  const daily = hive.agents.reduce(
-    (sum, a) => sum.map((n, i) => n + (a.daily[i] ?? 0)),
-    [0, 0, 0, 0, 0, 0, 0],
+  // Each agent's messages per day over the last 7 days in the viewer's zone,
+  // oldest first. The relay reads from the server's midnight 6 days back, so
+  // a zone ahead of the server's can miss a few hours of the first day.
+  const week = bucketsFor("7d", nowD, timeZone).starts;
+  const perAgent = hive.agents.map((a) =>
+    countInto(
+      week,
+      a.messages.map((m) => m.at),
+    ),
+  );
+  const daily = week.map((_, i) =>
+    perAgent.reduce((sum, counts) => sum + counts[i], 0),
   );
   const msgSeries =
     reads.messagesByDay && range !== "24h" && range !== "7d"
@@ -174,10 +196,12 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
     (a) => agentStatus(a, now, runtimes[a.name]) === "active",
   ).length;
   // Agents that posted each day, from the same per-day counts.
-  const activePerDay = daily.map(
-    (_, i) => hive.agents.filter((a) => (a.daily[i] ?? 0) > 0).length,
+  const activePerDay = week.map(
+    (_, i) => perAgent.filter((counts) => counts[i] > 0).length,
   );
-  const labels = starts.map(buckets.unit === "hour" ? hourOf : dayLabel);
+  const labels = starts.map((at) =>
+    buckets.unit === "hour" ? hourOf(at, timeZone) : dayLabel(at, timeZone),
+  );
   const activity: Series[] = [
     { label: "Messages", color: "var(--series-1)", values: msgSeries },
     {
@@ -194,14 +218,18 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
 
   const grid = reads.weekHour
     ? reads.weekHour
-    : weekHourGrid(agentTimes.filter((t) => t >= now - 7 * DAY_S));
+    : weekHourGrid(
+        agentTimes.filter((t) => t >= now - 7 * DAY_S),
+        1,
+        timeZone,
+      );
   const peak = peakCell(grid);
   const max = Math.max(0, ...grid.flat());
   const steps = grid.map((r) => r.map((n) => heatStep(n, max)));
 
   const failing = reads.failing;
   const working = hive.agents.filter((a) => a.messagesToday > 0).length;
-  const today = new Date(nowD).setHours(0, 0, 0, 0) / 1000;
+  const today = startOfDay(now, timeZone);
   const channels = new Set([
     ...hive.feed.filter((f) => f.isAgent && f.channel).map((f) => f.channel),
     ...hive.agents.flatMap((a) =>
@@ -210,7 +238,8 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
         .map((m) => m.channel),
     ),
   ]).size;
-  const needs = needsYou.rows.length;
+  // The greeting's count follows a picked project (#167), like the card.
+  const needs = scopeNeedsYou(needsYou.rows, scope).length;
   const rangeLabel = range;
 
   const kpis: Kpi[] = [
@@ -255,6 +284,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
   return (
     <div className="space-y-6">
       <OpenOnRedirect />
+      <SyncTimeZone current={sentZone} />
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         <div className="mr-auto space-y-1">
           <Greeting />
@@ -310,7 +340,7 @@ export default async function OverviewPage({ searchParams }: PageProps<"/">) {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <LiveFeed
-          rows={reads.live ?? liveRows(hive, github, now)}
+          rows={reads.live ?? liveRows(hive, github, now, timeZone)}
           hive={hive}
           now={now}
         />
@@ -384,7 +414,7 @@ async function readHistory(o: {
     prevKept: o.prevFrom >= o.now - retentionDays() * DAY_S,
   };
   const date = (s: number) => new Date(s * 1000);
-  const starts = bucketsFor(o.range, date(o.now)).starts;
+  const starts = bucketsFor(o.range, date(o.now), o.timeZone).starts;
   const tasks: Promise<unknown>[] = [];
   const attempt = (what: string, fn: () => Promise<void>) =>
     tasks.push(fn().catch((err) => console.error(`Overview, ${what}:`, err)));
@@ -440,7 +470,9 @@ async function readHistory(o: {
     attempt("cost", async () => {
       // Daily rows can't fill hourly buckets, so at 24h the sparkline shows 7 days.
       const sparkStarts =
-        o.range === "24h" ? bucketsFor("7d", date(o.now)).starts : starts;
+        o.range === "24h"
+          ? bucketsFor("7d", date(o.now), o.timeZone).starts
+          : starts;
       const since = Math.min(o.from, sparkStarts[0]);
       const [rows, upToNow, sincePrev] = await Promise.all([
         costByDay(date(since), o.timeZone),
@@ -449,7 +481,7 @@ async function readHistory(o: {
       ]);
       // Cost rows are per local day, so the donut covers whole days from the
       // range's first one. The KPI reads the exact window.
-      const fromDay = new Date(o.from * 1000).setHours(0, 0, 0, 0) / 1000;
+      const fromDay = startOfDay(o.from, o.timeZone);
       out.spend = spendByModel(
         rows.filter((r) => r.day.getTime() / 1000 >= fromDay),
       );
@@ -479,8 +511,13 @@ async function historyLive(): Promise<Row[] | null> {
 }
 
 // Without the store: the Timeline's live feed, today's GitHub and relay rows.
-function liveRows(hive: Hive, github: GitHub | null, now: number): Row[] {
-  const today = new Date(now * 1000).setHours(0, 0, 0, 0) / 1000;
+function liveRows(
+  hive: Hive,
+  github: GitHub | null,
+  now: number,
+  timeZone: string,
+): Row[] {
+  const today = startOfDay(now, timeZone);
   return liveEvents(github ? githubRows(github) : [], hive.feed, today)
     .slice(0, 6)
     .map((e) => toRow(e, { ...names(hive), channel: (name) => name }));

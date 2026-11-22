@@ -2,71 +2,102 @@
 
 import { ChevronDown, ChevronUp, TriangleAlert } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useId, useState } from "react";
+import { useId, useState } from "react";
+import { NeedsYouCard } from "@/components/needs-you-card";
+import { ProjectChip } from "@/components/project-chip";
+import { useProjectFilter } from "@/components/project-context";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import type { Mutes } from "@/lib/alerts";
+import type { LogRow } from "@/lib/cleared-log";
+import type { NeedsYou } from "@/lib/needs-you";
+import { oldestFirst } from "@/lib/needs-you-rows";
+import { chipLabel, scopeNeedsYou } from "@/lib/project-scope";
 
 export type BannerAgent = { name: string; picture: string | null };
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * DESIGN.md → Obsidian redesign → Overview: on Overview the Needs you card
  * starts as a one-row banner with the same items. "Review all" expands the
- * full card (passed as `children`) in place. Every other view, and Overview
- * with nothing waiting, shows the card as it is.
+ * full card in place. Every other view, and Overview with nothing waiting,
+ * shows the card as it is. With a project picked (#167) the rows, the banner
+ * and its avatars are that project's, under a chip that clears the filter.
  */
 export function NeedsYouSlot({
-  titles,
+  data,
+  now,
+  cleared,
+  snooze,
   agents,
-  children,
 }: {
-  /** Row titles, oldest first, as the card orders them. */
-  titles: string[];
-  /** The agents the rows name, for the avatar stack. */
+  data: NeedsYou;
+  now: number;
+  cleared: LogRow[] | null;
+  snooze: { mutes: Mutes; canEdit: boolean; signIn: boolean } | null;
+  /** Every agent the relay lists, for the banner's avatar stack. */
   agents: BannerAgent[];
-  children: ReactNode;
 }) {
   const onOverview = usePathname() === "/";
+  const { scope } = useProjectFilter();
   const [open, setOpen] = useState(false);
   const id = useId();
-  if (!onOverview || titles.length === 0) return children;
+  const rows = oldestFirst(scopeNeedsYou(data.rows, scope));
+  const titles = rows.map((r) => r.title);
+  const text = rows.map((r) => `${r.title} ${r.detail}`).join(" ");
+  const named = agents.filter((a) =>
+    new RegExp(`\\b${escapeRe(a.name)}\\b`).test(text),
+  );
+  const card = (
+    <NeedsYouCard data={data} now={now} cleared={cleared} snooze={snooze} />
+  );
 
-  const n = titles.length;
   return (
     <div className="space-y-3">
-      <Card className="flex-row items-center gap-3 px-4 py-3 sm:px-5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-warning/12 text-warning">
-          <TriangleAlert className="size-4.5" aria-hidden />
-        </span>
-        <p className="min-w-0 flex-1 truncate text-sm">
-          <span className="font-semibold">
-            {n} {n === 1 ? "thing needs" : "things need"} you
-          </span>
-          <span className="text-muted-foreground max-sm:hidden">
-            {" · "}
-            {titles.join(" · ")}
-          </span>
-        </p>
-        {agents.length > 0 && (
-          <span className="flex -space-x-2 max-sm:hidden" aria-hidden>
-            {agents.slice(0, 4).map((a) => (
-              <MiniAvatar key={a.name} agent={a} />
-            ))}
-          </span>
-        )}
-        <Button
-          variant="ghost"
-          className="h-9 shrink-0"
-          aria-expanded={open}
-          aria-controls={id}
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? "Collapse" : "Review all"}
-          {open ? <ChevronUp aria-hidden /> : <ChevronDown aria-hidden />}
-        </Button>
-      </Card>
-      <div id={id} hidden={!open}>
-        {open && children}
-      </div>
+      <ProjectChip />
+      {!onOverview || titles.length === 0 ? (
+        card
+      ) : (
+        <div className="space-y-3">
+          <Card className="flex-row items-center gap-3 px-4 py-3 sm:px-5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-warning/12 text-warning">
+              <TriangleAlert className="size-4.5" aria-hidden />
+            </span>
+            <p className="min-w-0 flex-1 truncate text-sm">
+              <span className="font-semibold">
+                {titles.length}{" "}
+                {titles.length === 1 ? "thing needs" : "things need"} you
+                {scope ? ` in ${chipLabel(scope)}` : ""}
+              </span>
+              <span className="text-muted-foreground max-sm:hidden">
+                {" · "}
+                {titles.join(" · ")}
+              </span>
+            </p>
+            {named.length > 0 && (
+              <span className="flex -space-x-2 max-sm:hidden" aria-hidden>
+                {named.slice(0, 4).map((a) => (
+                  <MiniAvatar key={a.name} agent={a} />
+                ))}
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              className="h-9 shrink-0"
+              aria-expanded={open}
+              aria-controls={id}
+              onClick={() => setOpen((o) => !o)}
+            >
+              {open ? "Collapse" : "Review all"}
+              {open ? <ChevronUp aria-hidden /> : <ChevronDown aria-hidden />}
+            </Button>
+          </Card>
+          <div id={id} hidden={!open}>
+            {open && card}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

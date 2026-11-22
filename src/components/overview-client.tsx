@@ -17,6 +17,7 @@ import {
 } from "@/lib/overview-range";
 import { getSettings, useSettings } from "@/lib/settings";
 import type { Runtime } from "@/lib/status-feed";
+import { TIME_ZONE_COOKIE, viewerTimeZone } from "@/lib/time-zone";
 
 /** Settings → Open on: a view other than Overview sends / there. */
 export function OpenOnRedirect() {
@@ -27,6 +28,26 @@ export function OpenOnRedirect() {
     const view = getSettings().openOn;
     if (view !== "overview") router.replace(`/${view}`);
   }, [router]);
+  return null;
+}
+
+/**
+ * Sends Settings → Time zone to the server in a cookie, so the Overview's day
+ * and hour buckets follow it (#153). Refreshes once when it changes.
+ */
+export function SyncTimeZone({ current }: { current: string | null }) {
+  const router = useRouter();
+  const { timeZone } = useSettings();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: timeZone re-runs it when the setting changes.
+  useEffect(() => {
+    // Read the store directly: the hook holds the server default on hydration.
+    const zone = viewerTimeZone(getSettings().timeZone);
+    if (zone === current) return;
+    // biome-ignore lint/suspicious/noDocumentCookie: a plain preference cookie, like the sidebar's.
+    document.cookie = `${TIME_ZONE_COOKIE}=${encodeURIComponent(zone)}; path=/; max-age=31536000; SameSite=Lax`;
+    // Blocked cookies would refresh forever; stay on the server's zone then.
+    if (document.cookie.includes(`${TIME_ZONE_COOKIE}=`)) router.refresh();
+  }, [current, router, timeZone]);
   return null;
 }
 
@@ -90,6 +111,7 @@ const DOT: Record<AgentStatus, string> = {
   active: "bg-success",
   idle: "bg-muted-foreground",
   quiet: "bg-warning",
+  elsewhere: "bg-muted-foreground",
   stopped: "bg-muted-foreground/50",
 };
 

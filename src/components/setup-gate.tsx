@@ -60,6 +60,10 @@ export function SetupGate() {
           <code className="font-mono">setup token: 7Q2M-…-PB3W</code> (valid 60
           min)
         </p>
+        <p className="text-xs text-muted-foreground">
+          Running <code className="font-mono">pnpm dev</code>? It’s printed in
+          that terminal. Restarting the server issues a new token.
+        </p>
       </div>
       <form onSubmit={submit} className="space-y-3">
         <label

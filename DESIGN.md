@@ -13,6 +13,8 @@ The design spec for buzz-dashboard. Read it before writing any UI code, and keep
 - **Update:** the Toolkit card on the agent page, approved by rtorcato on 2026-11-11. Then on 2026-11-11, admin editing of agents, the sign-in gate with per-hive roles, and the hive switcher. Build them in this order: sign-in and roles, hive config with the switcher, the read-only Toolkit, then edit mode. On 2026-11-11 rtorcato chose Buzz 1.0 for Save (see Saving). Edit mode ships once the hive runs Buzz 1.0, and everything before it works on 0.X.
 - **Update:** Unknown presence and Archived agents, the Memory card, cost read with the owner's sign-in, config History and real hive icons, approved by rtorcato on 2026-11-11. Build them after sign-in, roles and the switcher, in this order: Unknown and Archived, Memory, Cost with your sign-in. History ships with Edit, once the hive runs Buzz 1.0.
 - **Update:** the Obsidian redesign (see Obsidian redesign), approved by rtorcato on 2026-11-19. It is a new visual layer, an Overview page at `/` and a few new charts, each with a named source. Every rule and data source above still applies. The lines it overrides below have been edited to match.
+- **Update:** the reworked setup Owner step (#175), approved by rtorcato on 2026-11-20. It replaces the extension signing flow with copy key, authorize in Buzz desktop, paste the proof.
+- **Update:** the Edit profile modal (#113) redrawn in the Obsidian look, approved by rtorcato on 2026-11-21. It adds the Desktop path as chips and a rename hint, and drops the "within a minute" caveat now that #112 has shipped. Its motion stays the plain fade and scale.
 - **Mockups:** kept outside the repo and not linked from it. This file is the spec, so build from the text below.
 
 ## Obsidian redesign (2026-11-19)
@@ -70,7 +72,7 @@ These replace the matching `.dark` values in Tokens. The `:root` light values ar
 
 `/` becomes Overview and Agents moves to `/agents`. Overview sits first in the sidebar with `layout-dashboard`. With more than one hive the route is `/h/<hive>`.
 
-1. **Greeting:** "Good afternoon" and a muted line, "11 agents working across 9 channels. One needs a look." The time of day follows Settings → Time → Time zone (Local or UTC). On the right, a `ToggleGroup` range: 24h, 7d, 30d, 90d, default 7d. Without the history store only 24h and 7d show, since the live reads cover 7 days.
+1. **Greeting:** "Good afternoon" and a muted line, "11 agents working across 9 channels. One needs a look." The time of day follows Settings → Time → Time zone (Local or UTC). So do the Overview's day and hour buckets and the heatmap: the browser sends its zone to the server in the `hive_tz` cookie, and without it they follow the server clock. On the right, a `ToggleGroup` range: 24h, 7d, 30d, 90d, default 7d. Without the history store only 24h and 7d show, since the live reads cover 7 days.
 2. **Needs you banner:** on Overview the Needs you card collapses to one row: an amber `triangle-alert` tile, "3 things need you", the items joined by " · " (muted), a stack of the involved agents' avatars and a ghost "Review all" (`chevron-down`). Same items, colours and order as Needs you. "Review all" expands the full card in place, with its row actions, footer and History, and the button becomes "Collapse". With zero items the banner becomes the green "All clear" line. Every other view keeps the full card at the top, and Settings still has none.
 3. **KPI row:** one card per metric, each with a tinted icon tile, label, value, a delta pill against the previous period of the same length (green up, red down, neutral grey for cost), and a 44px sparkline with the fade. The labels carry the range ("Messages · 7d").
    - **Active agents** (violet): now, from relay presence and the status feed, ranked the same as the Agents badges. Unknown agents aren't counted.
@@ -171,6 +173,7 @@ The `ViewTabs` pill row goes. Use the stock shadcn `Sidebar` with `collapsible="
 | **Cost** | See Cost (#42). |
 | **Pipeline** | A `Tabs` row, **Now** and **Flow** (see Pipeline flow, #47). **Now** is the view below. When Custom stages are set, its stage cards are those labels; with the default PR lifecycle they are Opened, In review, Approved and Stalled. Today's view: 5 stage stat `Card`s (`ai-ready` … `ai-blocked`, with mono labels). Then a `BarChart` of PRs opened vs merged per day (chart-1 and chart-2, with legend and tooltip), filtered by a `Select` for agent and a `ToggleGroup` for 7d, 14d or 30d. Then a `Table` by repo, with blocked repos first and the ready/wip/review columns hidden on phones. Last, a `Table` by agent, taking the agent from the PR body's `@Name` header. PRs without that header go under "Unattributed". |
 | **Releases** | See Releases (#71). |
+| **Channels** | Read-only map (#168), after Releases in the sidebar. Title and a muted count ("9 channels · 4 the dashboard can read"); a warning banner when the dashboard can't read some live channels; a `ToggleGroup` filter with counts (All, Can't read, Unassigned, Archived) and a project `Select`; then a `Card` table: Channel (lock = private, `#` = open), Project (short label and name, "Hive-wide", or an Unassigned chip), Members (overlapping avatars, +N and a count), Dashboard (Readable, "Can't read · not a member" or Archived) and Last message. Phones stack each row. **Readable** means the channel is open or the dashboard's own key is in its member list. **Last message** is the newest one the relay returned in the last 7 days, else "–". The Agents view shows **Active elsewhere** (`eye-off`, info tone) in place of Quiet when the runtime says the agent is working and it belongs to a channel the dashboard can't read. Archived channels are those whose relay metadata carries an `archived` tag. **Channel admin (#169), owner only:** a primary **New channel** button by the title, **Add the dashboard to N** on the banner, and a `…` row menu (Rename and describe, Members, Assign to project, Let the dashboard read it, Open in Buzz when `BUZZ_WEB_URL` is set, Archive or Unarchive in destructive red). The first three open a right `Sheet` (full width on phones): Name with a `#` prefix, Description, Project (`Select`: projects, Hive-wide, No project; "Saved in the dashboard. It doesn't change the channel on the relay."), Members (rows with ×, a green **Adding** pill or a red **Removing · Undo** pill; owners can't be removed) and an Archive card. Nothing is sent until **Review and sign** (footer counts the changes). The signing `Dialog` lists one line per change with a **Relay · signed** or **Dashboard** badge that turns to Waiting for you, Saved or Not saved; relay changes go first, the project assignment last. **New channel** is a `Dialog`: Name, Project (defaults to the project whose slug is the name, else a new project for `<first GITHUB_OWNERS>/<name>`), agent chips, **Let the dashboard read it** on by default, Private (default) or Open, then **Create and sign**. Every relay change is a NIP-29 event (9007 create, 9002 edit or archive, 9000 add, 9001 remove) the owner's NIP-07 extension signs along with the relay's NIP-98 auth; `/api/channels/admin` checks both against an allowlist and forwards them unchanged, and holds no key that could make the change. |
 | **Timeline** | Without a database: a `BarChart` of events per hour today (chart-3, with the current hour in chart-1) and 2 stat `Card`s. Then a live-feed `Card` with a `ToggleGroup` type filter and a `Select` for agent. Rows are grouped by hour under sticky headers. A row that needs the owner gets a 5% status tint and a "Needs you" `Badge`. With the history store, see Timeline (#41). |
 
 ## Agents on phones (#20)
@@ -319,17 +322,20 @@ The dashboard can't publish a config revision yet (see "Check during the build" 
 
 ### Edit profile (#113)
 
-The avatar, display name and About live in the agent's own profile event, and only the agent's key can sign it. Buzz Desktop holds that key and this dashboard never does, so the dashboard points to Desktop the same way the #109 Agent settings card does: same modal shell, same steps, same buttons. Mockups: `buzz-dashboard/agent-profile-*` on R2.
+The avatar, display name and About live in the agent's own profile event, and only the agent's key can sign it. Buzz Desktop holds that key and this dashboard never does, so the dashboard points to Desktop the same way the #109 Agent settings card does: same modal shell, same steps, same buttons. Mockups: `buzz-dashboard/agent-profile-obsidian-*` on R2 (approved 2026-11-21; the older light `agent-profile-*` set is superseded).
 
 - **Button:** an outline "`user-pen` Edit profile", in the hero's row after Open channel and PRs. Admins only, like Agent settings. Viewers never see it.
-- **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Edit the profile in Buzz Desktop".
+- **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Edit the profile in Buzz Desktop", with the muted line "Bumble's picture, name and About are signed by its own key, so they change in Buzz Desktop."
   - A Change `Select` (Avatar, Display name, About), with the current avatar (`Avatar`, 40px) beside it when Avatar is picked.
   - Display name and About get a New value `Input` (About a `Textarea`), so the steps fill in live: "Set Display name to **Bumblebee**". Under it, a muted "Now Bumble" shows the current value.
-  - Three numbered steps with the agent's real name: "Open Buzz Desktop → Agents → **Bumble** → Edit", then "Click the avatar and pick a new image" (or "Set Display name to **…**"), then "Save. The new picture shows here within a minute."
+  - Three numbered steps with the agent's real name: "Open Buzz Desktop › Agents › **Bumble** › Edit", then "Click the avatar and pick a new image" (or "Set Display name to **…**"), then "Save. The new picture shows here."
+  - **Path chips:** every name Buzz Desktop shows in step 1 (Buzz Desktop, Agents, the agent's name, Edit) is a mono chip, the same style as the setup Owner step: `muted` background, 1px `border`, rounded, with a muted `›` between chips. The agent's name chip is 600 `foreground`. Copy steps writes the path as plain text with `›`.
+  - **Rename hint** (Display name only): a muted `info` line under the steps, "The agent page link follows the new name. The old link redirects." This is the redirect rule under Agent page routes.
   - A muted `key-round` line: "Only Bumble's own key can sign its profile. Buzz Desktop holds that key; this dashboard never does."
   - Buttons: outline "`copy` Copy steps" and primary "Done", the same as #109. Nothing is ever saved here.
+  - **Phone sheet:** Done and Copy steps stack as full-width 44px buttons, with Done on top.
 - **No deep link.** A dashboard in a container can't reach the Desktop app on your machine.
-- **Check during the build:** the "within a minute" line only holds once #112 (the avatar proxy) lands. Until then, relay pictures show as initials.
+- **Motion:** the plain fade and scale in the Motion table, the same as #109. No text morph on the steps.
 
 ### Saving
 
@@ -660,7 +666,7 @@ A gallery of every file the agents upload to the public R2 media bucket, served 
 | | Motion · System follows your OS reduce-motion setting. | ToggleGroup: System / Reduced / Full | System. Reduced turns off everything in Motion, the same as `prefers-reduced-motion: reduce`. |
 | **Time** · Logs and messages are recorded in UTC. | Timestamps | ToggleGroup: Relative / Absolute | Relative |
 | | Clock | ToggleGroup: 12h / 24h | follows the browser locale |
-| | Time zone | ToggleGroup: Local / UTC | Local. Under it, a mono preview chip shows the result ("Preview: 2h ago · Tue 14:05"). |
+| | Time zone | ToggleGroup: Local / UTC | Local. Under it, a mono preview chip shows the result ("Preview: 2h ago · Tue 14:05"). The only setting the server sees, through the `hive_tz` cookie, for the Overview's buckets. |
 | **Data and refresh** · The page re-reads the hive on this schedule. | Auto-refresh · Off still lets you refresh by hand. | ToggleGroup: Off / 30s / 1m / 5m | 1m (today's `REFRESH_EVERY_MS`) |
 | | Quiet after · An agent with no messages for this long shows as Quiet. | Select: 30 minutes, 1, 2, 4, 8 hours | 2 hours |
 | **Agents** · The Agents view and the default landing page. | Open on · The view you land on at /. | Select: Overview, Agents, Pipeline, Health, Cost, Timeline, Releases, Media (Health and Cost only with the history store) | Overview |
@@ -694,7 +700,7 @@ What changed from the request in #58, as approved:
 A single `Card`, `max-w-[480px]`, centred 72px below the bar (24px on phones).
 
 - Title "Set up this dashboard", then "It isn’t connected to a relay yet. To prove you run it, paste the one-time setup token from the container logs."
-- "`square-terminal` Find it with", then a mono command block on `muted`, `docker compose logs dashboard | grep "setup token"`, with an outline "`copy` Copy" beside it. Hint: "The line looks like `setup token: 7Q2M-…-PB3W` (valid 60 min)".
+- "`square-terminal` Find it with", then a mono command block on `muted`, `docker compose logs dashboard | grep "setup token"`, with an outline "`copy` Copy" beside it. Hint: "The line looks like `setup token: 7Q2M-…-PB3W` (valid 60 min)". A second muted hint below it: "Running `pnpm dev`? It’s printed in that terminal. Restarting the server issues a new token."
 - "Setup token" `Input`, mono, placeholder `XXXX-XXXX-XXXX-XXXX`, focused on load.
 - A full-width primary "`lock` Unlock setup" `Button` (`size="lg"`).
 - Muted `text-xs` footer: "The token works once and runs out after 60 minutes. Restart the container for a new one. Setting the relay variables in env skips this page entirely." plus a "Configuration docs" link.
@@ -707,7 +713,7 @@ A `max-w-[1040px]` page: a 240px stepper column, then the step `Card`, with a 40
 
 - **Stepper** (`nav`, `aria-label="Setup steps"`, sticky): one row per step with a 28px round marker, the step name (500) and a muted `text-xs` line. The current step is on `muted` with a `primary` marker and `aria-current="step"`. Done steps show `check` on a 14% `success` tint, and later steps a numbered outline marker in muted text. Under the steps, a dashed note: "`lock` Setup closes for good when you finish, and the token in the logs stops working."
   1. Dashboard key · Its own read-only identity
-  2. Owner · You vouch for it, once
+  2. Owner · Vouch for it in Buzz, once
   3. Relay · Test the connection
   4. Optional sources · GitHub, media, history
   5. Finish · Review and close setup
@@ -721,13 +727,25 @@ A `max-w-[1040px]` page: a 240px stepper column, then the step `Card`, with a 40
 - A `Collapsible`, "Already have a key for this dashboard?": "Set `BUZZ_PRIVATE_KEY` in the env file and restart. Setup then shows it here as “Set in env” and skips this step."
 - The server generates the keypair on its first visit to this step, and only the npub goes to the browser. The private key is not encrypted at rest: it is the root key that #68 derives its wrapping key from, so it cannot be wrapped by itself. It is written to the config volume as a `0600` file owned by the server user, and that file permission is its only protection, the same as `BUZZ_PRIVATE_KEY` in an env file. The copy above must not say "encrypted".
 
-**2. Owner.** "Vouch for the dashboard" · "Your relay only lets the dashboard in if a member vouches for its key. Your Nostr extension signs a one-time attestation (NIP-OA). Your key never leaves the extension." It reuses the NIP-07 sign-in from #40.
+**2. Owner.** "Let your Buzz account vouch for the dashboard" · "Your relay only lets the dashboard in if a member vouches for it. You do that once in Buzz desktop, then paste the proof it gives you here. Your own key never leaves Buzz." No NIP-OA wording and no JSON on screen. The body is one card with three numbered parts, each a 28px round marker (outline, muted number) with a 500 title and a muted line. A part's marker turns to `check` on the 14% `success` tint once it's done.
 
-- **Ready:** a bordered box with a primary "`key-round` Sign with your extension" `Button`.
-- **Waiting:** the box is centred and the button is disabled, with a spinning `loader-circle` and "Waiting for your extension…". Under it: "Approve the signing request in your extension’s popup." and muted "It asks to sign one event that names `npub1…`. Nothing is posted." A "Cancel" link goes back to Ready.
-- **Signed:** a box on the 6% `success` tint with a 35% border: the 44px `Avatar`, the name (600) with a success `Badge` "`circle-check-big` Signed", the npub (mono, muted), and a "Use another account" link on the right. Muted under it: "Attestation for `npub1…` · signed just now with your extension". Then a dashed note: "`key-round` **Sam becomes the dashboard’s owner.** Only this account can sign in to snooze, ack and change sources, and only agents Sam has attested count as agents." Continue unlocks.
-- **No extension:** a box on the 7% `warning` tint: "`triangle-alert` **No Nostr extension found in this browser**", "Install a NIP-07 extension (Alby, nos2x or similar), sign in to it with your owner account, then try again.", and an outline "`refresh-cw` Try again". Under it an open `Collapsible`, "Paste a signed attestation instead": a mono `Textarea` (placeholder `["auth","<owner hex>","<conditions>","<sig>"]`) and the hint "Sign it for `npub1…` with your own tooling." with a "How to make one" docs link. The server checks that a pasted tag names this dashboard's key before Continue unlocks.
-- Signing sets the owner (`BUZZ_OWNER_PUBKEY`) and the auth tag (`BUZZ_AUTH_TAG`), and signs the owner in, so they leave setup signed in.
+- **1. Copy the dashboard's key.** "This is the key Buzz will vouch for. It's public, so it's safe to copy and share." A bordered box: the 32px mark tile, "Hive dashboard · public key" (muted), then the key in hex (mono, wraps, never truncated) with its first and last four characters in 600 `foreground` and the rest muted. An outline "`copy` Copy key" on the right (under the key on phones) turns into "`check` Copied" for 2 seconds.
+- **2. Authorize it in Buzz desktop.** Five short lines, marked a to e on screen, with every button name Buzz shows as a mono chip (`muted` background, 1px `border`, rounded):
+  1. "Open Settings › Buzz › Security."
+  2. "Select Authorize external identity and paste the key."
+  3. "Select Authorize identity. Check the key Buzz shows starts with `3f9a` and ends with `c21e`." The two groups are the real first and last four characters of this dashboard's key.
+  4. "Select Authorize this key."
+  5. "Select Copy ownership proof. Buzz puts the proof on your clipboard."
+- **3. Paste the proof here.** An "Ownership proof" `Textarea` (mono once filled, 4 rows), placeholder "Paste the proof Buzz copied". It checks on paste, with no button press. Under it an outline "`shield-check` Check proof", disabled while the field is empty, with muted "We check it as soon as you paste." beside it. The button stays for typed or edited input.
+- **Safety line,** muted `text-xs` under the card body: "Only paste a proof for this key. It doesn't expire." plus a "Step-by-step guide" link (`external-link`) to the relay-identity doc's Owner attestation section, not the configuration page.
+- **Proof checked:** the field gets the success border and all three markers show `check`. A box on the 6% `success` tint with a 35% border: a 40px `Avatar`, a success `Badge` "`circle-check-big` Proof checked", and the owner's npub (mono, muted). It shows a name only if the server already has one; the relay comes in step 3, so most of the time it's the npub alone. Under it, muted: "`key-round` **This account becomes the dashboard's owner.** Only it can sign in to snooze, ack and change sources." Continue unlocks.
+- **Errors** sit under the field in a `role="alert"` line, `circle-x`, destructive text with a bold first sentence, and the field gets the destructive border. Continue stays disabled.
+  - **Proof for another key:** "**This proof isn't for this dashboard's key.** Buzz may have authorized a different key. In Buzz, authorize the key above, ending in `c21e`, and copy a new proof." The server can't tell which key a wrong proof was made for, so the message never names one.
+  - **Not a proof** (a pasted npub, hex key or other text): "**That isn't an ownership proof.** It looks like a public key. In Buzz, finish step 2 and select Copy ownership proof, then paste what it copies." Say "It looks like a public key" only when it does; otherwise leave that sentence out.
+  - **Anything else the server rejects** (bad signature, unreadable): "**Buzz didn't make this proof for this dashboard.** Copy a new proof from Buzz and paste it again."
+- **Phones:** the three parts stack at full width, the key wraps, and Copy key and Check proof are full width at 44px.
+- **Out of scope:** signing from a browser extension. #156 tracks it.
+- A checked proof sets the owner (`BUZZ_OWNER_PUBKEY`) and the auth tag (`BUZZ_AUTH_TAG`). Pasting a proof doesn't sign anyone in, so the owner signs in after Finish.
 
 **3. Relay.** "Connect to your relay" · "Where your Buzz community lives. The dashboard logs in with its key and your attestation, then counts your agents."
 

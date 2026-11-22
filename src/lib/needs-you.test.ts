@@ -8,8 +8,10 @@ import {
   countsByView,
   excludedLabels,
   failingRow,
+  GITHUB_WAIT_MS,
   getNeedsYou,
   githubReads,
+  MISSED_WAIT_MS,
   mergeRow,
   type NeedsYouRow,
   needsYouRefs,
@@ -167,6 +169,20 @@ describe("mergeRow", () => {
       count: 2,
       since: "2026-10-15T00:00:00.000Z",
       keys: ["merge:rtorcato/js-common#2", "merge:rtorcato/db-common#7"],
+      items: [
+        {
+          repo: "rtorcato/js-common",
+          label: "js-common#2",
+          at: expect.any(String),
+          key: "merge:rtorcato/js-common#2",
+        },
+        {
+          repo: "rtorcato/db-common",
+          label: "db-common#7",
+          at: "2026-10-15T00:00:00.000Z",
+          key: "merge:rtorcato/db-common#7",
+        },
+      ],
     });
   });
   it("is absent with none", () => {
@@ -198,6 +214,22 @@ describe("blockedRow", () => {
       count: 2,
       since: "2026-10-15T00:00:00.000Z",
       keys: ["blocked:rtorcato/js-common#5", "blocked:rtorcato/db-common#9"],
+      items: [
+        {
+          repo: "rtorcato/js-common",
+          label: "js-common#5",
+          at: expect.any(String),
+          key: "blocked:rtorcato/js-common#5",
+          pr: false,
+        },
+        {
+          repo: "rtorcato/db-common",
+          label: "db-common#9",
+          at: "2026-10-15T00:00:00.000Z",
+          key: "blocked:rtorcato/db-common#9",
+          pr: false,
+        },
+      ],
     });
   });
   it("says item when a blocked PR is in it", () => {
@@ -378,6 +410,38 @@ describe("getNeedsYou", () => {
     expect(data.failures.map((f) => f.source)).not.toContain("GitHub");
   });
 
+  it("doesn't hold the next request after a slow read (#162)", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "gh");
+    vi.useFakeTimers();
+    loadGitHub.mockReturnValue(new Promise(() => {}));
+    loadReleases.mockReturnValue(new Promise(() => {}));
+    const first = getNeedsYou();
+    await vi.advanceTimersByTimeAsync(GITHUB_WAIT_MS);
+    await first;
+
+    // Still cold: the second request gives up long before GITHUB_WAIT_MS.
+    let done = false;
+    const second = getNeedsYou().then((d) => {
+      done = true;
+      return d;
+    });
+    await vi.advanceTimersByTimeAsync(MISSED_WAIT_MS);
+    expect(done).toBe(true);
+    expect((await second).rows).toEqual([]);
+
+    // Warm now: the row shows, still without the full wait.
+    loadGitHub.mockResolvedValue({ github: github([pr({})]), fetchedAt: "" });
+    loadReleases.mockResolvedValue({
+      releases: { repos: [], runsUnread: [] },
+      fetchedAt: "",
+    });
+    const third = getNeedsYou();
+    await vi.advanceTimersByTimeAsync(MISSED_WAIT_MS);
+    const data = await third;
+    vi.useRealTimers();
+    expect(data.rows.map((r) => r.kind)).toEqual(["merge"]);
+  });
+
   it("is not connected, with no freshness, until a source exists", async () => {
     vi.stubEnv("BUZZ_RELAY_URL", "");
     const data = await getNeedsYou();
@@ -518,6 +582,15 @@ describe("failingRow", () => {
       count: 1,
       since: "2026-10-16T19:08:00.000Z",
       keys: ["failing:Gale"],
+      items: [
+        {
+          repo: null,
+          agent: "Gale",
+          label: "Gale",
+          at: "2026-10-16T19:08:00.000Z",
+          key: "failing:Gale",
+        },
+      ],
     });
   });
 
@@ -604,6 +677,26 @@ describe("releaseRow", () => {
         releaseKey("acme/lib", 7),
         releaseKey("acme/app", 3),
         releaseKey("acme/app", 4),
+      ],
+      items: [
+        {
+          repo: "acme/lib",
+          label: "lib",
+          at: "2026-10-16T18:00:00.000Z",
+          key: releaseKey("acme/lib", 7),
+        },
+        {
+          repo: "acme/app",
+          label: "app",
+          at: "2026-10-16T12:00:00.000Z",
+          key: releaseKey("acme/app", 3),
+        },
+        {
+          repo: "acme/app",
+          label: "app",
+          at: "2026-10-16T19:00:00.000Z",
+          key: releaseKey("acme/app", 4),
+        },
       ],
     });
   });

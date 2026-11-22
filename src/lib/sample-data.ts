@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import type { ChannelMap, ChannelMember, ChannelRow } from "./channels";
 import type { Hive } from "./hive";
+import type { Job, JobsFeed, RunDot } from "./jobs-parse";
 import type { MediaEnv, MediaFile } from "./media";
 import type { NeedsYouRow } from "./needs-you";
 import type { Runtime, StatusFeed } from "./status-feed";
@@ -99,6 +101,111 @@ export function sampleHive(): Hive {
   return { agents, feed: [], hourly: Array(24).fill(0), channels: {} };
 }
 
+// Channels for the map: made-up names. Ember's "security" and Dune's
+// "research" are private and the sample dashboard isn't a member.
+export function sampleChannelMap(): ChannelMap {
+  const t = nowS();
+  const person: ChannelMember = {
+    pubkey: fakeKey("owner"),
+    name: null,
+    picture: null,
+  };
+  const members = (...names: string[]): ChannelMember[] => [
+    ...names.map((name) => ({ pubkey: fakeKey(name), name, picture: null })),
+    person,
+  ];
+  const app = { slug: "example-app", name: "example-app", shortLabel: "EA" };
+  const lib = { slug: "example-lib", name: "example-lib", shortLabel: "EL" };
+  const row = (
+    r: Partial<ChannelRow> & Pick<ChannelRow, "id" | "name">,
+  ): ChannelRow => ({
+    description: "",
+    revision: 0,
+    isPrivate: true,
+    archived: false,
+    readable: true,
+    scope: "unassigned",
+    project: null,
+    home: false,
+    members: [],
+    lastMessageAt: null,
+    ...r,
+  });
+  const rows: ChannelRow[] = [
+    row({
+      id: "c1",
+      name: "example-app",
+      scope: "project",
+      project: app,
+      home: true,
+      members: members("Atlas", "Cobalt", "Fern"),
+      lastMessageAt: t - 4 * 60,
+    }),
+    row({
+      id: "c2",
+      name: "example-lib",
+      scope: "project",
+      project: lib,
+      home: true,
+      readable: false,
+      members: members("Atlas", "Cobalt", "Ember"),
+      lastMessageAt: t - 40 * 60,
+    }),
+    row({
+      id: "c3",
+      name: "general",
+      isPrivate: false,
+      scope: "hive_wide",
+      members: members("Atlas", "Briar", "Cobalt", "Dune", "Ember", "Fern"),
+      lastMessageAt: t - 2 * 3600,
+    }),
+    row({
+      id: "c4",
+      name: "security",
+      scope: "hive_wide",
+      readable: false,
+      members: members("Atlas", "Ember"),
+      lastMessageAt: t - 3 * 3600,
+    }),
+    row({
+      id: "c5",
+      name: "research",
+      readable: false,
+      members: members("Atlas", "Dune"),
+      lastMessageAt: t - 70 * 60,
+    }),
+    row({
+      id: "c6",
+      name: "example-old",
+      archived: true,
+      scope: "project",
+      project: lib,
+      members: members("Atlas"),
+    }),
+  ];
+  return {
+    rows,
+    registry: true,
+    projects: [app, lib],
+    choices: [app, lib],
+  };
+}
+
+/**
+ * The owner's channel admin controls on sample data (#169), so the sheet and
+ * dialogs can be seen and screenshotted. Signing goes nowhere: there is no
+ * relay, and the route refuses without an owner session.
+ */
+export const sampleChannelAdmin = () => ({
+  relayEventsUrl: "https://relay.example/events",
+  dashboard: fakeKey("dashboard"),
+  owners: [fakeKey("owner")],
+  ownerNpub: null,
+  agents: AGENTS.map(([name]) => ({ pubkey: fakeKey(name), name })),
+  githubOwner: "example",
+  buzzUrl: null,
+});
+
 /** 30 days of messages per day, oldest first, for the agent page. */
 export const sampleActivity = () =>
   Array.from({ length: 30 }, (_, i) => 6 + ((i * 7) % 13) + (i > 22 ? 6 : 0));
@@ -180,4 +287,113 @@ export function sampleMedia(): MediaFile[] {
       modified,
     };
   });
+}
+
+const dots = (fail = 0): RunDot[] => [
+  ...Array<RunDot>(10 - fail).fill("ok"),
+  ...Array<RunDot>(fail).fill("fail"),
+];
+
+// name, purpose, schedule, next, minutes since last run, exit, wakes.
+const JOBS: [
+  string,
+  string,
+  string,
+  string,
+  number,
+  number,
+  [string, boolean][],
+][] = [
+  [
+    "morning-standup",
+    "Posts the weekday standup",
+    "Weekdays 09:00",
+    "next Mon 09:00",
+    420,
+    127,
+    [["Atlas", false]],
+  ],
+  [
+    "label-watch",
+    "Nudges stalled ai-* items",
+    "Every 15 min",
+    "next in 6 min",
+    9,
+    0,
+    [
+      ["Fern (old)", true],
+      ["Briar", false],
+    ],
+  ],
+  [
+    "ai-ready",
+    "Wakes Fern for new ai-ready issues",
+    "Every 2 min",
+    "next in 1 min",
+    1,
+    0,
+    [["Fern", false]],
+  ],
+  [
+    "limit-watch",
+    "Reads usage, pauses the hive at the limit",
+    "Every 2 min",
+    "next in 1 min",
+    1,
+    0,
+    [],
+  ],
+  [
+    "worktree-prune",
+    "Removes merged worktrees",
+    "Daily 10:00",
+    "next Sat 10:00",
+    360,
+    0,
+    [],
+  ],
+];
+
+export function sampleJobs(): JobsFeed {
+  const t = nowS();
+  const jobs: Job[] = JOBS.map(
+    ([name, purpose, schedule, next, ago, exit, wakes]) => ({
+      label: `example.hive.${name}`,
+      name,
+      purpose,
+      schedule,
+      next,
+      loaded: true,
+      paused: false,
+      missed: false,
+      missedAt: null,
+      lastRun: {
+        at: t - ago * 60,
+        exit,
+        durationS: 1.2,
+        logLine: exit ? `${name}.sh: line 42: tool: command not found` : "ok",
+      },
+      runs: dots(exit ? 2 : 0),
+      wakes: wakes.map(([w, stale]) => ({ name: w, stale })),
+      script: `bin/${name}.sh`,
+      log: `logs/${name}.log`,
+      installed: {
+        matches: name !== "worktree-prune",
+        ref: "config/launchd @ abc1234",
+      },
+    }),
+  );
+  jobs.push({
+    ...jobs[3],
+    label: "example.hive.daily-summary",
+    name: "daily-summary",
+    purpose: "Posts the end-of-day summary",
+    schedule: "Weekdays 17:00",
+    next: "next Mon 17:00",
+    missed: true,
+    missedAt: t - 26 * 3600,
+    lastRun: null,
+    runs: [],
+  });
+  return { publishedAt: t - 120, host: "M4 · example-mac", jobs };
 }

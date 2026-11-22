@@ -28,6 +28,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatAge } from "@/lib/age";
 import { loadGitHub } from "@/lib/github";
+import { loadRequestScope } from "@/lib/project-data";
+import { repoInScope } from "@/lib/project-scope";
 import {
   bumpOf,
   type Commit,
@@ -61,8 +63,11 @@ const age = (now: number, s: number) => formatAge((now - s) * 1000);
 const typeLabel = (c: Commit) => `${c.type ?? "other"}${c.breaking ? "!" : ""}`;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-export default async function ReleasesPage() {
+export default async function ReleasesPage({
+  searchParams,
+}: PageProps<"/releases">) {
   if (!process.env.GITHUB_TOKEN) return <NotConnected />;
+  const { scope } = await loadRequestScope(await searchParams);
   const [result, github] = await Promise.all([
     loadReleases(),
     Promise.race([
@@ -77,7 +82,13 @@ export default async function ReleasesPage() {
       </SourceDown>
     );
   }
-  const { repos, runsUnread } = result.releases;
+  // A picked project (#167) keeps its repos' rows, runs and red CI.
+  const repos = scope
+    ? result.releases.repos.filter((r) => repoInScope(scope, r.repo))
+    : result.releases.repos;
+  const runsUnread = scope
+    ? result.releases.runsUnread.filter((r) => repoInScope(scope, r))
+    : result.releases.runsUnread;
   const now = Math.floor(Date.now() / 1000);
   // "owner/repo#N" → the PR's agent, from the 30-day PR read.
   const agents = new Map(

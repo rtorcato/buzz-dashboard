@@ -86,6 +86,12 @@ const HIVE_TABLES = [
   "agent_events",
   "needs_you_log",
   "settings",
+  // #166: NOT NULL and in every key, so the default only saves naming it.
+  "projects",
+  "project_repos",
+  "channel_assignments",
+  "project_agents",
+  "registry_revisions",
 ];
 
 /**
@@ -131,11 +137,35 @@ export type EventQuery = {
   /** Any of these actors: an agent's name and its pubkeys. */
   actors?: string[];
   channel?: string;
+  /**
+   * A project's repos and channels (#167): events in any of those repos or
+   * channels. Needs `since`, so the repo and channel indexes (#166) bound the
+   * read.
+   */
+  project?: ProjectFilter;
   /** Case-insensitive substring of the title, body or repo. */
   text?: string;
   /** Default 100, at most 1000. */
   limit?: number;
 };
+
+/** A project's repos (lowercase "owner/name") and Buzz channel ids. */
+export type ProjectFilter = { repos: string[]; channels: string[] };
+
+/**
+ * `lower(repo) = ANY(repos) OR channel = ANY(channels)`: each side matches an
+ * index on the events table (events_repo_at_idx, events_channel_at_idx). A
+ * project with neither matches nothing.
+ */
+export function projectCondition(p: ProjectFilter): SQL {
+  const repos = p.repos.length
+    ? sql`lower(${events.repo}) = ANY(${sql.param(p.repos)}::text[])`
+    : undefined;
+  const channels = p.channels.length
+    ? sql`${events.channel} = ANY(${sql.param(p.channels)}::text[])`
+    : undefined;
+  return or(repos, channels) ?? sql`false`;
+}
 
 const COLS = {
   at: events.at,
@@ -160,11 +190,15 @@ function matching(q: EventQuery): SQL | undefined {
   );
   // where() keeps undefined operator values, so drop them per column.
   const conds = where(filter).filter((c) => c.val !== undefined);
+  if (q.project && !q.since) {
+    throw new Error("a project-scoped event query needs a since");
+  }
   const text = q.text?.trim();
   // Escape LIKE wildcards so "50%" matches itself.
   const like = text && `%${text.replace(/[\\%_]/g, "\\$&")}%`;
   return and(
     toDrizzleWhere(conds, COLS),
+    q.project ? projectCondition(q.project) : undefined,
     like
       ? or(
           ilike(events.title, like),
@@ -190,7 +224,7 @@ export function listEvents(q: EventQuery = {}): Promise<HistoryEvent[]> {
  * (#47). Only the columns it reads, and no row limit: a PR needs all of its
  * events to be measured.
  */
-export function prEvents(since: Date) {
+export function prEvents(since: Date, project?: ProjectFilter) {
   // ponytail: a few thousand rows at 90 days and ~30 PRs a day. Aggregate in
   // SQL if the store grows past what one page load can sort.
   return historyDb()
@@ -204,7 +238,9 @@ export function prEvents(since: Date) {
       data: events.data,
     })
     .from(events)
-    .where(matching({ since, source: "github", kinds: [...FLOW_KINDS] }))
+    .where(
+      matching({ since, source: "github", kinds: [...FLOW_KINDS], project }),
+    )
     .orderBy(events.at);
 }
 
@@ -436,10 +472,21 @@ export type CostRow = {
   value: number;
 };
 
-/** Cost and token sums since `since`, per day in `timeZone`, agent and model. */
+/** Spend tagged with one of these channels (#167); the index is (channel, at). */
+const inChannels = (channels: string[]): SQL =>
+  channels.length
+    ? sql`${costPoints.channel} = ANY(${sql.param(channels)}::text[])`
+    : sql`false`;
+
+/**
+ * Cost and token sums since `since`, per day in `timeZone`, agent and model.
+ * With `channels`, only spend tagged with one of them: untagged spend can't
+ * be placed in a project, so a project's total never includes it.
+ */
 export async function costByDay(
   since: Date,
   timeZone: string,
+  channels?: string[],
 ): Promise<CostRow[]> {
   // ponytail: sums raw delta points on every load. Roll them up into daily
   // rows if a 90-day range gets slow.
@@ -454,7 +501,12 @@ export async function costByDay(
       value: sql<number>`sum(${costPoints.value})`.mapWith(Number),
     })
     .from(costPoints)
-    .where(gte(costPoints.at, since))
+    .where(
+      and(
+        gte(costPoints.at, since),
+        channels ? inChannels(channels) : undefined,
+      ),
+    )
     // By position, as in countEventsByDay: the time zone is a parameter.
     .groupBy(sql`1`, sql`2`, sql`3`, sql`4`, sql`5`);
   return rows.map((r) => ({ ...r, day: new Date(r.day) }));
@@ -521,8 +573,28 @@ export async function knownSeries(ids: string[]): Promise<Set<string>> {
   return known;
 }
 
-/** Estimated dollars and turns per channel since `since`, costliest first. */
-export function costByChannel(since: Date) {
+/** Estimated dollars since `since` with no channel tag: no project owns it. */
+export async function costUntagged(since: Date): Promise<number> {
+  const [row] = await historyDb()
+    .select({
+      value: sql<number>`coalesce(sum(${costPoints.value}), 0)`.mapWith(Number),
+    })
+    .from(costPoints)
+    .where(
+      and(
+        gte(costPoints.at, since),
+        eq(costPoints.metric, "cost"),
+        isNull(costPoints.channel),
+      ),
+    );
+  return row?.value ?? 0;
+}
+
+/**
+ * Estimated dollars and turns per channel since `since`, costliest first; only
+ * these `channels` when given (#167).
+ */
+export function costByChannel(since: Date, channels?: string[]) {
   return historyDb()
     .select({
       channel: costPoints.channel,
@@ -532,7 +604,13 @@ export function costByChannel(since: Date) {
       turns: sql<number>`count(distinct ${costPoints.series})`.mapWith(Number),
     })
     .from(costPoints)
-    .where(and(gte(costPoints.at, since), isNotNull(costPoints.channel)))
+    .where(
+      and(
+        gte(costPoints.at, since),
+        isNotNull(costPoints.channel),
+        channels ? inChannels(channels) : undefined,
+      ),
+    )
     .groupBy(costPoints.channel)
     .orderBy(sql`2 desc`);
 }

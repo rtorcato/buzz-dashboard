@@ -12,56 +12,31 @@ import {
 } from "./health";
 import { loadFailing, recentBuckets } from "./health-data";
 import { type Hive, loadHive } from "./hive";
+import {
+  blockedTitle,
+  ciTitle,
+  detailOf,
+  mergeTitle,
+  type NeedsYouRow,
+  oldestOf,
+  type RowItem,
+  releaseTitle,
+} from "./needs-you-rows";
 import { loadReleases, type Releases } from "./releases";
 import { sampleMergeRow, sampleMode } from "./sample-data";
 import { loadStatusFeed, type StatusFeed } from "./status-feed";
 import { trippedDetail, usageState } from "./usage";
 
-export const VIEWS = [
-  "agents",
-  "health",
-  "pipeline",
-  "releases",
-  "timeline",
-] as const;
-export type View = (typeof VIEWS)[number];
-
-// The things that need the owner. A deployment whose merge bot handles
-// merge-ready hides that row with NEEDS_YOU_EXCLUDE_LABELS=merge-ready.
-export type NeedsYouKind =
-  | "release"
-  | "ci"
-  | "blocked"
-  | "merge"
-  | "paused"
-  | "failing";
-
-export const KIND_VIEW: Record<NeedsYouKind, View> = {
-  release: "releases",
-  ci: "releases",
-  blocked: "pipeline",
-  merge: "pipeline",
-  // Usage has no tab of its own.
-  paused: "agents",
-  failing: "health",
-};
-
-// One row per item type, e.g. "2 releases waiting for your approval", except
-// "failing", which has one row per failing agent.
-export type NeedsYouRow = {
-  kind: NeedsYouKind;
-  title: string;
-  detail: string;
-  // How many underlying items the row covers; feeds the tab count pill.
-  count: number;
-  // ISO time of the oldest item in the row.
-  since: string;
-  // Unix seconds the item clears by itself (a usage pause), shown as a countdown.
-  resetsAt?: number | null;
-  // The alert items (#45) the row covers, so snooze and ack (#46) can mute
-  // them. Absent on rows no alert rule reads.
-  keys?: string[];
-};
+export {
+  countsByView,
+  KIND_VIEW,
+  type NeedsYouKind,
+  type NeedsYouRow,
+  oldestFirst,
+  type RowItem,
+  VIEWS,
+  type View,
+} from "./needs-you-rows";
 
 // Alert item keys, shared by the rows and the alerts pass.
 export const failingKey = (agent: string) => `failing:${agent}`;
@@ -119,10 +94,6 @@ export function configFailures(
   return failures;
 }
 
-export function oldestFirst(rows: NeedsYouRow[]): NeedsYouRow[] {
-  return rows.toSorted((a, b) => a.since.localeCompare(b.since));
-}
-
 /** The "Paused for usage" row, or null when not paused or the reset has passed. */
 export function pausedRow(feed: StatusFeed | null, now: number) {
   if (!feed?.usage) return null;
@@ -137,6 +108,9 @@ export function pausedRow(feed: StatusFeed | null, now: number) {
     resetsAt: resumesAt,
   } satisfies NeedsYouRow;
 }
+
+const short = (repo: string) => repo.split("/").pop() ?? repo;
+const iso = (s: number) => new Date(s * 1000).toISOString();
 
 export const MERGE_READY = "merge-ready";
 export const AI_BLOCKED = "ai-blocked";
@@ -158,14 +132,20 @@ export function mergeRow(github: GitHub) {
     (p) => p.closedAt === null && p.labels.includes(MERGE_READY),
   );
   if (prs.length === 0) return null;
-  const oldest = Math.min(...prs.map((p) => p.createdAt));
+  const items: RowItem[] = prs.map((p) => ({
+    repo: p.repo,
+    label: `${short(p.repo)}#${p.number}`,
+    at: iso(p.createdAt),
+    key: mergeKey(p),
+  }));
   return {
     kind: "merge",
-    title: `${prs.length} PR${prs.length > 1 ? "s" : ""} ready to merge`,
-    detail: prs.map((p) => `${p.repo.split("/")[1]}#${p.number}`).join(", "),
+    title: mergeTitle(prs.length),
+    detail: detailOf(items),
     count: prs.length,
-    since: new Date(oldest * 1000).toISOString(),
-    keys: prs.map(mergeKey),
+    since: oldestOf(items),
+    keys: items.map((i) => i.key ?? ""),
+    items,
   } satisfies NeedsYouRow;
 }
 
@@ -179,15 +159,24 @@ export const blockedItems = (github: GitHub) =>
 export function blockedRow(github: GitHub) {
   const items = blockedItems(github);
   if (items.length === 0) return null;
-  const noun = items.some((i) => i.isPr) ? "item" : "issue";
-  const oldest = Math.min(...items.map((i) => i.claimedAt));
+  const rowItems: RowItem[] = items.map((i) => ({
+    repo: i.repo,
+    label: `${short(i.repo)}#${i.number}`,
+    at: iso(i.claimedAt),
+    key: blockedKey(i),
+    pr: i.isPr,
+  }));
   return {
     kind: "blocked",
-    title: `${items.length} ${noun}${items.length > 1 ? "s" : ""} blocked`,
-    detail: items.map((i) => `${i.repo.split("/")[1]}#${i.number}`).join(", "),
+    title: blockedTitle(
+      items.length,
+      items.some((i) => i.isPr),
+    ),
+    detail: detailOf(rowItems),
     count: items.length,
-    since: new Date(oldest * 1000).toISOString(),
-    keys: items.map(blockedKey),
+    since: oldestOf(rowItems),
+    keys: rowItems.map((i) => i.key ?? ""),
+    items: rowItems,
   } satisfies NeedsYouRow;
 }
 
@@ -230,26 +219,26 @@ export const HEADS_UP_QUIET_S = 2 * 3600;
 export const quietLine = (q: QuietClaim, now: number) =>
   `${q.agent} has been quiet for ${formatAge((now - q.since) * 1000)} while holding ${q.key}${q.more ? ` and ${q.more} more` : ""}.`;
 
-const short = (repo: string) => repo.split("/").pop() ?? repo;
-const iso = (s: number) => new Date(s * 1000).toISOString();
-
 /** The "Release waiting for approval" row, or null when none wait. */
 export function releaseRow(releases: Releases) {
   const runs = releases.repos.flatMap((r) =>
     r.waiting.map((w) => ({ repo: r.repo, ...w })),
   );
   if (runs.length === 0) return null;
-  const repos = [...new Set(runs.map((r) => short(r.repo)))];
+  const items: RowItem[] = runs.map((r) => ({
+    repo: r.repo,
+    label: short(r.repo),
+    at: iso(r.createdAt),
+    key: releaseKey(r.repo, r.id),
+  }));
   return {
     kind: "release",
-    title:
-      runs.length === 1
-        ? "1 release waiting for your approval"
-        : `${runs.length} releases waiting for your approval`,
-    detail: repos.join(", "),
+    title: releaseTitle(runs.length),
+    detail: detailOf(items),
     count: runs.length,
-    since: iso(Math.min(...runs.map((r) => r.createdAt))),
-    keys: runs.map((r) => releaseKey(r.repo, r.id)),
+    since: oldestOf(items),
+    keys: items.map((i) => i.key ?? ""),
+    items,
   } satisfies NeedsYouRow;
 }
 
@@ -257,17 +246,18 @@ export function releaseRow(releases: Releases) {
 export function ciRow(releases: Releases) {
   const red = releases.repos.filter((r) => r.redCi);
   if (red.length === 0) return null;
+  const items: RowItem[] = red.map((r) => ({
+    repo: r.repo,
+    label: short(r.repo),
+    at: iso(r.redCi?.since || Date.now() / 1000),
+  }));
   return {
     kind: "ci",
-    title:
-      red.length === 1
-        ? "Red CI on main in 1 repo"
-        : `Red CI on main in ${red.length} repos`,
-    detail: red.map((r) => short(r.repo)).join(", "),
+    title: ciTitle(red.length),
+    detail: detailOf(items),
     count: red.length,
-    since: iso(
-      Math.min(...red.map((r) => r.redCi?.since || Date.now() / 1000)),
-    ),
+    since: oldestOf(items),
+    items,
   } satisfies NeedsYouRow;
 }
 
@@ -288,6 +278,15 @@ export function failingRow(f: FailingAgent, source: HealthSource) {
     count: 1,
     since: new Date(f.since * 1000).toISOString(),
     keys: [failingKey(f.agent)],
+    items: [
+      {
+        repo: null,
+        agent: f.agent,
+        label: f.agent,
+        at: new Date(f.since * 1000).toISOString(),
+        key: failingKey(f.agent),
+      },
+    ],
   } satisfies NeedsYouRow;
 }
 
@@ -306,22 +305,28 @@ export const githubReads = (excluded: Set<string>) =>
 
 // A cold GitHub read takes about 20s. The card doesn't hold every page for it;
 // the read carries on and the next request shows the row.
-const GITHUB_WAIT_MS = 2_000;
-const briefly = <T>(p: Promise<T>) =>
-  Promise.race([
-    p,
-    new Promise<null>((r) => setTimeout(r, GITHUB_WAIT_MS, null)),
-  ]);
+export const GITHUB_WAIT_MS = 2_000;
+// Once a read misses that wait, later requests give it only this long until
+// it answers, so a read that stays cold doesn't cost every page 2s (#162). A
+// warm read comes from memory, well inside it.
+export const MISSED_WAIT_MS = 100;
+const MISSED_FOR_MS = 60_000;
+const missedAt = new Map<string, number>();
 
-export function countsByView(
-  rows: NeedsYouRow[],
-): Partial<Record<View, number>> {
-  const counts: Partial<Record<View, number>> = {};
-  for (const row of rows) {
-    const view = KIND_VIEW[row.kind];
-    counts[view] = (counts[view] ?? 0) + row.count;
-  }
-  return counts;
+async function briefly<T>(source: string, p: Promise<T>): Promise<T | null> {
+  const missed = Date.now() - (missedAt.get(source) ?? -Infinity);
+  const wait = missed < MISSED_FOR_MS ? MISSED_WAIT_MS : GITHUB_WAIT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
+    p,
+    new Promise<null>((r) => {
+      timer = setTimeout(r, wait, null);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (result === null) missedAt.set(source, Date.now());
+  else missedAt.delete(source);
+  return result;
 }
 
 /** The "owner/repo#N" refs of GitHub items that need the owner, for row tints. */
@@ -376,8 +381,8 @@ export const getNeedsYou = cache(async (): Promise<NeedsYou> => {
   // Both reads share one wait, so a cold start holds the page 2s, not 4s.
   // Silence needs the claims too, so GitHub is read whenever the relay is.
   const [gh, rel] = await Promise.all([
-    token && (reads.length || hive) ? briefly(loadGitHub()) : null,
-    token ? briefly(loadReleases()) : null,
+    token && (reads.length || hive) ? briefly("github", loadGitHub()) : null,
+    token ? briefly("releases", loadReleases()) : null,
   ]);
   if (gh?.github) {
     const merge = reads.includes("merge") && mergeRow(gh.github);
