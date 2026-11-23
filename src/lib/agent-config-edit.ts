@@ -25,14 +25,15 @@ export const GOOSE_SCHEMA = {
 } as const;
 
 /**
- * The values the dashboard lets you pick. Desktop takes any text for model
- * and effort, but a model the runtime doesn't offer is refused at launch
- * and stops the agent, and the dashboard can't read Desktop's list (#192).
- * So only these are signed. A head that already holds another value keeps
- * it as long as you don't change that field.
+ * The values the dashboard lets you pick for model and effort. goose takes
+ * the model IDs and thinking levels its provider offers, and the dashboard
+ * can't read that list (#192): a value goose doesn't offer fails the
+ * agent's next turn. So the page passes only values this hive already runs
+ * (the status feed's models, the head's own value). Blank, the runtime
+ * default, is always allowed.
  */
-export const MODEL_VALUES = ["opus", "sonnet", "haiku", "fable"] as const;
-export const EFFORT_VALUES = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Choices = { model: readonly string[]; effort: readonly string[] };
+export const NO_CHOICES: Choices = { model: [], effort: [] };
 export const SCOPE_VALUES = GOOSE_SCHEMA.scope;
 
 export const SETTINGS_MAX_BYTES = 65_535;
@@ -60,6 +61,7 @@ export function settingsDraftProblem(
   agentType: string | null,
   settings: Record<string, unknown>,
   kept: Record<string, unknown> = {},
+  choices: Choices = NO_CHOICES,
 ): string | null {
   if (!editableType(agentType)) {
     return "The dashboard can only edit goose agents for now.";
@@ -72,12 +74,14 @@ export function settingsDraftProblem(
     }
     if (value === kept[name]) continue;
     const allowed: Record<string, readonly string[]> = {
-      model: MODEL_VALUES,
-      effort: EFFORT_VALUES,
+      model: choices.model,
+      effort: choices.effort,
       scope: SCOPE_VALUES,
     };
     if (allowed[name] && !allowed[name].includes(value)) {
-      return `${label(name)} can't be "${value}". Pick one of ${allowed[name].join(", ")}.`;
+      return allowed[name].length
+        ? `${label(name)} can't be "${value}". Pick one of ${allowed[name].join(", ")}, or the default.`
+        : `${label(name)} can't be "${value}". Keep it or use the default.`;
     }
     if (name === "provider" && value.length > 64) {
       return "Provider is too long.";
@@ -86,7 +90,7 @@ export function settingsDraftProblem(
   return null;
 }
 
-const label = (k: string) =>
+export const label = (k: string) =>
   ({
     model: "Model",
     provider: "Provider",
@@ -109,6 +113,7 @@ type SettingsBody = {
 export function nextSettingsContent(
   head: ConfigEvent,
   draft: SettingsDraft,
+  choices: Choices = NO_CHOICES,
 ): { content: string } | { problem: string } {
   let body: SettingsBody;
   try {
@@ -123,7 +128,12 @@ export function nextSettingsContent(
     if (v === "") delete settings[k];
     else settings[k] = v;
   }
-  const problem = settingsDraftProblem(body.agentType ?? null, settings, kept);
+  const problem = settingsDraftProblem(
+    body.agentType ?? null,
+    settings,
+    kept,
+    choices,
+  );
   if (problem) return { problem };
   const content = JSON.stringify({ ...body, settings });
   if (bytes(content) > SETTINGS_MAX_BYTES) {
@@ -304,6 +314,40 @@ export function lineDiff(before: string, after: string): DiffLine[] {
   return out;
 }
 
+export type LineDiff = DiffLine;
+
+/**
+ * The diff as the Review and save block shows it: changed lines with
+ * `context` unchanged lines around them, and a "…" line for each gap.
+ */
+export function lineDiffBlock(
+  before: string,
+  after: string,
+  context = 2,
+): DiffLine[] {
+  const all = lineDiff(before, after);
+  const keep = all.map(() => false);
+  all.forEach((l, k) => {
+    if (l.op === " ") return;
+    for (
+      let j = Math.max(0, k - context);
+      j <= Math.min(all.length - 1, k + context);
+      j++
+    )
+      keep[j] = true;
+  });
+  const out: DiffLine[] = [];
+  let gap = false;
+  all.forEach((l, k) => {
+    if (keep[k]) {
+      if (gap && out.length) out.push({ op: " ", text: "…" });
+      gap = false;
+      out.push(l);
+    } else gap = true;
+  });
+  return out;
+}
+
 /** Settings as `key: value` lines, for the diff. */
 export const settingsLines = (content: string) => {
   try {
@@ -345,6 +389,65 @@ export function refusalText(name: string, message: string): string {
     default:
       return `Not saved. ${message.slice(0, 200) || "The relay didn't accept it."} Your edits are kept.`;
   }
+}
+
+/**
+ * Settings content that brings back `target` (an older revision) over the
+ * current head, like Desktop's `revertTemplate`: the old body as it was.
+ * Still checked, so a revision the runtime would now refuse isn't signed.
+ */
+export function revertSettingsContent(
+  target: ConfigEvent,
+): { content: string } | { problem: string } {
+  let body: SettingsBody;
+  try {
+    body = JSON.parse(target.content) as SettingsBody;
+  } catch {
+    return { problem: "That revision's settings aren't readable." };
+  }
+  if (!body || typeof body.settings !== "object" || !body.settings) {
+    return { problem: "That revision has no settings." };
+  }
+  const problem = settingsDraftProblem(
+    body.agentType ?? null,
+    body.settings,
+    body.settings,
+  );
+  return problem ? { problem } : { content: target.content };
+}
+
+/** The edits that differ from `base`; an edit back to the base drops out. */
+export function pruneEdits(
+  base: SettingsDraft,
+  edits: SettingsDraft,
+): SettingsDraft {
+  const out: SettingsDraft = {};
+  for (const k of Object.keys(GOOSE_SCHEMA) as SettingKey[]) {
+    const v = edits[k];
+    if (v !== undefined && v !== (base[k] ?? "")) out[k] = v;
+  }
+  return out;
+}
+
+/** The changed fields' labels, in card order: "Model, Effort, Instructions". */
+export function changedLabels(
+  edits: SettingsDraft,
+  instructionsChanged: boolean,
+): string[] {
+  const order: SettingKey[] = ["model", "provider", "effort", "scope"];
+  return [
+    ...order.filter((k) => edits[k] !== undefined).map(label),
+    ...(instructionsChanged ? ["Instructions"] : []),
+  ];
+}
+
+/** "1 line changed", "3 lines changed": the instructions preview's note. */
+export function linesChanged(before: string, after: string): string {
+  const diff = lineDiff(before, after);
+  const removed = diff.filter((l) => l.op === "-").length;
+  const added = diff.filter((l) => l.op === "+").length;
+  const n = Math.max(removed, added);
+  return `${n} line${n === 1 ? "" : "s"} changed`;
 }
 
 export { INSTRUCTIONS_TYPE, SETTINGS_TYPE };
