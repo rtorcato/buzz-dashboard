@@ -71,6 +71,10 @@ Every variable is read on the server. Nothing is prefixed with `NEXT_PUBLIC_`, a
 
 Keep `.env` out of version control. The repository's `.gitignore` already excludes `.env*` apart from `.env.example`.
 
+## The Desktop plugin's read token
+
+`NEEDS_YOU_READ_TOKEN` is optional. It lets the [Buzz Desktop plugin](./desktop-plugin.md) read `GET /api/needs-you`, and no other route, even with sign-in required for reads. It is compared in constant time and never echoed. The rows still name your repos, issues and agents, so keep it in the Keychain and rotate it by changing the variable.
+
 ## The container
 
 The image is multi-stage and the final stage holds only the Next.js standalone server: no pnpm, no source, no dev dependencies. It runs as the non-root `node` user. Run it with `--cap-drop ALL` and `no-new-privileges`, as the examples above do.

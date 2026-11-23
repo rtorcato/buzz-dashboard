@@ -1,0 +1,48 @@
+#!/bin/sh
+# Reads the Needs you rows from your buzz-dashboard for the Buzz Desktop
+# plugin (buzz-dashboard#193). macOS only.
+#
+# Config:  ~/.config/buzz-dashboard/plugin.json  {"url": "https://your.dashboard"}
+# Token:   Keychain item "buzz-dashboard-needs-you" (the dashboard's
+#          NEEDS_YOU_READ_TOKEN), read with /usr/bin/security.
+# Output:  {"dashboard":"<url>","needsYou":<the /api/needs-you JSON>} on
+#          success. Anything else: no output and a non-zero exit.
+#
+# The token never goes in argv, a log or stdout: curl reads its header from a
+# config on stdin. Absolute paths only; no eval.
+
+set -eu
+PATH=/usr/bin:/bin
+export PATH
+umask 077
+
+fail() { exit 1; }
+
+[ -n "${HOME:-}" ] || fail
+conf="$HOME/.config/buzz-dashboard/plugin.json"
+[ -f "$conf" ] || fail
+
+url=$(/usr/bin/plutil -extract url raw -o - "$conf" 2>/dev/null) || fail
+# https only, a bare origin or a path prefix; nothing a shell, a curl config
+# line or JSON string could trip on.
+case "$url" in
+  https://*) ;;
+  *) fail ;;
+esac
+case "$url" in
+  *[!A-Za-z0-9._~:/@%+=-]*) fail ;;
+esac
+url=${url%/}
+
+token=$(/usr/bin/security find-generic-password -s buzz-dashboard-needs-you -w 2>/dev/null) || fail
+[ -n "$token" ] || fail
+case "$token" in
+  *[!A-Za-z0-9._~+/=-]*) fail ;;
+esac
+
+body=$(printf 'header = "Authorization: Bearer %s"\n' "$token" |
+  /usr/bin/curl --silent --fail --max-time 4 --max-filesize 262144 \
+    --proto =https --config - "$url/api/needs-you" 2>/dev/null) || fail
+[ -n "$body" ] || fail
+
+printf '{"dashboard":"%s","needsYou":%s}\n' "$url" "$body"
