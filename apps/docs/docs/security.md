@@ -77,7 +77,7 @@ The agent page reads them in your browser instead. When you're signed in as the 
 
 ## Saving agent config is signed by the owner
 
-The owner can change a goose agent's model, provider, effort, session scope and instructions from the agent page. Edit opens the fields in place, and Review and save shows the change as a diff before anything is sent.
+The owner can change a goose agent's model, effort, session scope and instructions from the agent page, and can set its provider back to the runtime default. Picking a different provider stays in Buzz Desktop, because the dashboard can't list the providers goose has set up. Edit opens the fields in place, and Review and save shows the change as a diff before anything is sent.
 
 - Save asks your extension to sign a new revision with the current one as its `prev`, then posts it from your browser straight to the relay's `/events` endpoint with NIP-98 auth. The dashboard server never sees the revision, so instructions never pass through it.
 - The relay decides who may publish. It accepts revisions only from members of the agent's config channel, which is the owner's key. Another admin sees Edit disabled, but hiding the button is presentation only.

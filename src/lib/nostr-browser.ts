@@ -176,6 +176,7 @@ export async function configWrite(
     accepted?: unknown;
     message?: unknown;
     error?: unknown;
+    event_id?: unknown;
   } | null;
   const said =
     typeof answer?.message === "string" && answer.message
@@ -183,15 +184,24 @@ export async function configWrite(
       : typeof answer?.error === "string"
         ? answer.error
         : "";
+  // A duplicate is the same revision already accepted.
+  if (/^duplicate:/.test(said)) return { ok: true, event };
   if (!res.ok || answer?.accepted === false) {
-    // A duplicate is the same revision already accepted.
-    if (/^duplicate:/.test(said)) return { ok: true, event };
     return {
       ok: false,
       message: said || `The relay refused it (${res.status}).`,
     };
   }
-  return { ok: true, event };
+  // Only the relay's own yes counts. A 200 from anything else (a proxy's
+  // HTML page, an empty body) isn't proof the revision was published.
+  if (answer?.accepted === true || answer?.event_id === event.id) {
+    return { ok: true, event };
+  }
+  return {
+    ok: false,
+    message:
+      "The relay's answer wasn't readable, so it may not have saved. Reload to check.",
+  };
 }
 
 /** A signed registry write (#166): a NIP-98 event for this URL and body. */
