@@ -1,8 +1,8 @@
 "use client";
 
 import { useCopy } from "@rtorcato/react-common";
-import { Check, Copy, Info, Lock } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, Info, Lock, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,17 +28,25 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  type AgentConfig,
+  configSource,
+  readAgentConfig,
+  readFailure,
+  settingsProblem,
+} from "@/lib/agent-config";
+import {
   desktopSteps,
   SETTINGS,
   type Setting,
   stepsText,
 } from "@/lib/agent-settings";
+import { configRead, nostrExtension } from "@/lib/nostr-browser";
 
 // DESIGN.md → "Agent settings, reference-only" (#109). Read-only rows and one
 // button that opens Buzz Desktop steps; nothing is ever saved from here.
-// ponytail: Model and Effort only, from the status feed. The other rows
-// (runtime, parallel turns, responds to, timeouts, prompt) need the relay
-// config reader, and an unconnected source shows nothing (DESIGN.md → Rules).
+// The rows come from the agent's relay config (#194), read in the owner's
+// browser with their sign-in. Without a signer, or when the read fails, the
+// card falls back to the status feed's model.
 
 export type AgentSettingsData = {
   model: string | null;
@@ -48,6 +56,52 @@ export type AgentSettingsData = {
   stopped: boolean;
 };
 
+/** What the browser needs to read the relay config; null when it can't. */
+export type RelayConfigTarget = {
+  /** The relay's HTTP origin. */
+  relay: string;
+  /** The relay's own key (NIP-11 `self`): it signs channel metadata. */
+  relaySelf: string;
+  /** The agent's current pubkey. */
+  agent: string;
+};
+
+type Read =
+  | { state: "idle" }
+  | { state: "reading" }
+  | { state: "read"; config: AgentConfig }
+  | { state: "failed"; why: string };
+
+/** Reads the agent's config once per target, in this browser. */
+function useRelayConfig(target: RelayConfigTarget | null): Read {
+  const [read, setRead] = useState<Read>({ state: "idle" });
+  const relay = target?.relay;
+  const relaySelf = target?.relaySelf;
+  const agent = target?.agent;
+  useEffect(() => {
+    const n = nostrExtension();
+    if (!relay || !relaySelf || !agent || !n) return;
+    let live = true;
+    setRead({ state: "reading" });
+    n.getPublicKey()
+      .then((owner) =>
+        readAgentConfig((path, f) => configRead(n, relay, path, f), {
+          relaySelf,
+          owner,
+          agent,
+        }),
+      )
+      .then(
+        (config) => live && setRead({ state: "read", config }),
+        (err) => live && setRead({ state: "failed", why: readFailure(err) }),
+      );
+    return () => {
+      live = false;
+    };
+  }, [relay, relaySelf, agent]);
+  return read;
+}
+
 // Fade and scale from 96%; reduced motion keeps the fade only.
 const MOTION =
   "duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] data-open:zoom-in-[0.96] data-closed:duration-150 data-closed:zoom-out-[0.96] motion-reduce:data-open:zoom-in-100 motion-reduce:data-closed:zoom-out-100";
@@ -55,31 +109,79 @@ const MOTION =
 export function AgentSettings({
   name,
   data,
+  target = null,
   className = "",
 }: {
   name: string;
   data: AgentSettingsData;
+  target?: RelayConfigTarget | null;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const read = useRelayConfig(target);
+  const config = read.state === "read" ? read.config : null;
+  const settings =
+    config?.settings.state === "ok" ? config.settings.value : null;
+  const instructions =
+    config?.instructions.state === "ok" ? config.instructions.value : null;
+  const problem = config && settingsProblem(config);
+  // The #109 steps modal still covers Model and Effort.
   const rows: [Setting, string | null][] = [
-    ["Model", data.model],
-    ["Effort", data.effort],
+    ["Model", settings ? settings.model : data.model],
+    ["Effort", settings ? settings.effort : data.effort],
   ];
+  // DESIGN.md → "Agent settings, read-only": the owner's rows, in this order.
+  const shown: [string, string | null][] = settings
+    ? [
+        ["Model", settings.model],
+        ["Provider", settings.provider],
+        ["Effort", settings.effort],
+        ["Session scope", settings.scope],
+        ["Runtime", settings.agentType],
+      ]
+    : rows;
+  const source = config
+    ? configSource(config, Math.floor(Date.now() / 1000))
+    : read.state === "reading"
+      ? "Reading the relay config…"
+      : data.source;
   return (
     <Card className={`gap-4 p-5 ${className}`}>
       <div className="space-y-2">
         <h2 className="font-semibold">Agent settings</h2>
-        <Badge variant="outline" className="text-muted-foreground">
-          <Lock aria-hidden />
-          Managed in Buzz Desktop
-        </Badge>
-        <p className="text-xs text-muted-foreground">{data.source}</p>
+        {!settings && (
+          <Badge variant="outline" className="text-muted-foreground">
+            <Lock aria-hidden />
+            Managed in Buzz Desktop
+          </Badge>
+        )}
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          {source}
+        </p>
+        {read.state === "failed" && (
+          <p className="text-xs text-muted-foreground">
+            {read.why} Showing the status feed.
+          </p>
+        )}
+        {problem && (
+          <p className="flex items-start gap-1.5 text-xs text-warning">
+            <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+            {problem}
+          </p>
+        )}
       </div>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
-        {rows.map(([k, v]) => (
+        {shown.map(([k, v]) => (
           <div key={k} className="contents">
-            <dt className="text-muted-foreground">{k}</dt>
+            <dt className="text-muted-foreground">
+              {k}
+              {k === "Runtime" && (
+                <span className="ml-1.5 inline-flex items-center gap-1 text-xs">
+                  <Lock className="size-3" aria-hidden />
+                  Set in Buzz Desktop
+                </span>
+              )}
+            </dt>
             <dd className="min-w-0 text-right">
               {v === null ? (
                 <span className="text-muted-foreground">Not reported</span>
@@ -87,7 +189,9 @@ export function AgentSettings({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <span className="block truncate font-mono text-xs leading-5" />
+                      <span
+                        className={`block truncate leading-5 ${k === "Session scope" ? "" : "font-mono text-xs"}`}
+                      />
                     }
                   >
                     {v}
@@ -99,6 +203,14 @@ export function AgentSettings({
           </div>
         ))}
       </dl>
+      {instructions !== null && (
+        <div className="space-y-1.5">
+          <h3 className="text-sm text-muted-foreground">Instructions</h3>
+          <p className="line-clamp-3 rounded-md bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap">
+            {instructions || "(empty)"}
+          </p>
+        </div>
+      )}
       <Button
         variant="outline"
         className="h-11 sm:h-9"

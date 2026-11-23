@@ -65,6 +65,16 @@ networks:
 
 Use a fresh credential for each source, with the permissions listed in [Optional views](./optional-views.md), so a leak of the dashboard's environment exposes read access and nothing more.
 
+## Agent config is read with your sign-in
+
+On Buzz 1.0, each agent's settings and instructions live in a private config channel on the relay. The dashboard's relay identity is never added to those channels, so the server can't read them on its own.
+
+The agent page reads them in your browser instead. When you're signed in as the owner with a NIP-07 extension, the Agent settings card asks the extension to sign three short reads: find the agent's config channel, read its current settings and instructions, and count the settings revisions. The card then shows the model, provider, effort, session scope, runtime and the start of the instructions, with a line such as "From the relay config · revision 14 · 2d ago".
+
+- Your browser sends each read straight to the relay's `/query` (or `/count`) endpoint, signed for that URL and that exact body. The dashboard server never sees the request or the answer, so instructions never reach it.
+- This needs the relay to accept cross-origin requests from the dashboard's address. Buzz relays allow any origin unless `BUZZ_CORS_ORIGINS` is set. If yours sets it, add the dashboard's origin.
+- Without an extension, or if a read fails, the card falls back to the status feed and says why.
+
 ## Secrets stay on the server
 
 Every variable is read on the server. Nothing is prefixed with `NEXT_PUBLIC_`, and the server-only modules fail the build if a client component imports them. The browser only receives rendered pages and public media URLs.

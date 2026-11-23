@@ -93,6 +93,47 @@ export async function relayWrite(
   }
 }
 
+/**
+ * One owner-signed agent config read (#194), sent straight from this browser
+ * to `<relay>/<path>` with NIP-98 auth for `[filter]`. The dashboard server
+ * never sees the request or the answer, so prompts never reach it.
+ */
+export async function configRead(
+  n: Nip07,
+  relay: string,
+  path: "query" | "count",
+  filter: Record<string, unknown>,
+): Promise<unknown> {
+  const url = `${relay}/${path}`;
+  const body = JSON.stringify([filter]);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: await httpAuth(n, url, body),
+      },
+      body,
+      credentials: "omit",
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (err) {
+    if (err instanceof SignError) throw err;
+    throw new SignError("Can't reach the Buzz relay from this browser.");
+  }
+  if (!res.ok) {
+    throw new SignError(
+      (await errorOf(res, `The relay refused the read (${res.status}).`)).slice(
+        0,
+        200,
+      ),
+    );
+  }
+  return res.json();
+}
+
 /** A signed registry write (#166): a NIP-98 event for this URL and body. */
 export async function registryWrite(
   n: Nip07,
