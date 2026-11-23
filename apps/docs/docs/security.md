@@ -84,7 +84,7 @@ The owner can change a goose agent's model, effort, session scope and instructio
 - If someone else saved since you opened the page, the relay refuses the stale `prev` and nothing is published. Your edits stay, and "Reload and keep my edits" re-reads the config and applies them on top.
 - A revision keeps every field and tag the dashboard doesn't know, such as `preset` and `pluginNotes`. It never holds keys, env values or provider credentials.
 - Model and Effort only offer values this hive already runs, plus the runtime default. goose takes the model IDs and thinking levels its provider offers, and a value it doesn't offer would fail the agent's next turn. Change to anything else in Buzz Desktop.
-- The agent uses the new revision from its next turn. There is no restart. After a save, "Revert to N" publishes the previous revision again as a new one. History is never rewritten.
+- The agent uses the new revision from its next turn. There is no restart. After a save, "Revert to N" publishes the previous revision again as a new one. History is never rewritten. A revert brings back the old settings as they were, so it skips the Model and Effort lists. It still passes the schema check, but if the old model is one goose no longer offers, change it in Buzz Desktop.
 
 ## Secrets stay on the server
 

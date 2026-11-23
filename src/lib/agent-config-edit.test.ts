@@ -98,6 +98,17 @@ describe("settingsDraftProblem", () => {
       /spaces/,
     );
   });
+  it("checks Provider is an id", () => {
+    expect(
+      settingsDraftProblem(GOOSE_TYPE, { provider: "gcp_vertex_ai" }),
+    ).toBeNull();
+    expect(settingsDraftProblem(GOOSE_TYPE, { provider: "a/b" })).toMatch(
+      /isn't a provider id/,
+    );
+    expect(
+      settingsDraftProblem(GOOSE_TYPE, { provider: "x".repeat(65) }),
+    ).toMatch(/isn't a provider id/);
+  });
   it("keeps a head value that isn't on the list, if unchanged", () => {
     const kept = { model: "claude-opus-5-5" };
     expect(settingsDraftProblem(GOOSE_TYPE, kept, kept)).toBeNull();

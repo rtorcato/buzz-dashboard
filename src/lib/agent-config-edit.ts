@@ -83,8 +83,9 @@ export function settingsDraftProblem(
         ? `${label(name)} can't be "${value}". Pick one of ${allowed[name].join(", ")}, or the default.`
         : `${label(name)} can't be "${value}". Keep it or use the default.`;
     }
-    if (name === "provider" && value.length > 64) {
-      return "Provider is too long.";
+    // A goose provider id: "anthropic", "openai", "gcp_vertex_ai", …
+    if (name === "provider" && !/^[a-z0-9][a-z0-9_.-]{0,63}$/i.test(value)) {
+      return `Provider "${value.slice(0, 64)}" isn't a provider id.`;
     }
   }
   return null;
