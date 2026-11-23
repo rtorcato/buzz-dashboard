@@ -107,7 +107,7 @@ Same route, same cards and same data as Agent page. What changes:
 - **Hero buttons**, in order on the right:
   - Solid **Open channel** (`external-link`). It is the old "Open in Buzz", renamed because it opens the agent's home channel.
   - Outline **PRs** (`external-link`), as before.
-  - **Admins only:** outline Edit profile (opens the #113 steps modal), Edit once publishing works (see Editing agents and Saving), and History on Buzz 1.0 hives. Edit profile and Edit are not outbound links, so they carry their own icons, not `external-link`.
+  - **Admins only:** outline Edit profile (opens the #113 steps modal), Edit and History for the hive owner on Buzz 1.0 hives (see Editing agents and Saving). Edit profile and Edit are not outbound links, so they carry their own icons, not `external-link`.
   - The mockup's "Edit in Desktop" is not built as a link. A dashboard can't open the Desktop app (see Edit profile), so the existing Edit profile and Agent settings modals keep that job.
 - **KPI row:** the 4 stat cards get the Overview KPI style: icon tile, delta pill and fading sparkline. Deltas need the history store, as on Overview.
 - **Turns and errors:** replaces the Activity bar chart, in the same place and with the same 7d / 14d / 30d `ToggleGroup` (default 14d), in the Hive activity style. Turns come from the relay turn metrics and errors from the cost source, as Health. With no cost source the errors line is left out, as on Overview. **p50 latency** is drawn only once a source reports turn duration. v1 has none (Health's Turn duration stays not connected), so until then its legend entry is a dashed "Latency · not connected".
@@ -124,7 +124,7 @@ It's a glanceable ops screen, and it answers one question first: **"does anythin
 
 The app is read-only toward the hive. Every action on GitHub, npm or Buzz is an outbound link, marked with the `external-link` icon, and the dashboard never posts to the relay or GitHub. The one exception to "never posts" is the opt-in Buzz DM alert channel (#45), which sends only to the owner with a posting key of its own, never the hive's. The other exception is the dashboard's own state, and only for the signed-in owner (#40): snooze and ack, alert channels and rules, custom stages, and the cost source with its ingest token. Viewers can't write anything, and signed-out visitors only ever see the sign-in page.
 
-**Admins can change agents** (see Editing agents). A hive admin can edit an agent's toolkit and settings, and a save becomes a reviewed, revertable change to the hive's config, never a live write. That is the only write toward the hive. The dashboard still never posts to channels or acts on GitHub, never holds an agent's private key or provider credentials, and viewers can't write anything.
+**The owner can change agents** (see Editing agents). The hive owner can edit an agent's settings and instructions, and a save becomes a reviewed, revertable revision on the relay, never a live write. That is the only write toward the hive. The dashboard still never posts to channels or acts on GitHub, never holds an agent's private key or provider credentials, and viewers can't write anything.
 
 **Without a database** (no `DATABASE_URL`, #39) the dashboard is today's live-only view. Health, Cost and the Pipeline Flow tab leave the sidebar, Timeline shows only the live feed, and Needs you loses its footer, history and snooze/ack. Nothing shows an "add a database" nag.
 
@@ -288,37 +288,37 @@ What the agent remembers between sessions: its `core` memory and its cold record
   - **Still decrypting:** `Skeleton` rows in the list, and the meter waits.
   - **Can't decrypt** (the signer refused or timed out): `circle-help` "Couldn't decrypt memory. Your signer didn't answer." and an outline "Try again".
 
-### Editing agents (admins)
+### Editing agents (owner)
 
-Only a hive **admin** (see Sign-in and roles) sees any of this. Viewers get the page as above.
+Revised for Buzz 1.0.6 and approved by rtorcato on 2026-11-23 (#192). Only the hive **owner** can edit, because only the owner's key is a member of each agent's config channel. Other admins see Edit disabled (see Saving), and viewers get the page as above. Mockups: `buzz-dashboard/agent-settings-v2-*` on R2.
 
-- **Edit button:** an outline "`pencil` Edit" in the hero's button row. In edit mode it becomes ghost "Cancel" and primary "Review and save".
-- **Edit mode:** an amber `warning` "Editing" `Badge` beside the name, and an amber ring (`ring-2 ring-warning/40`) on each editable card: Toolkit and Agent settings. Everything else stays read-only.
-- **Toolkit, editing:** each chip gets an `x` button (`aria-label="Remove animate"`). Each group ends in an "Add…" input that takes a skill name or `owner/repo`, added on Enter. A new third-party skill shows as a dashed amber chip with the hint "Needs a security review before it installs". Saving one asks the security reviewer for a review, so the review rule lives in the form. It doesn't install until that review passes.
-- **Agent settings** (`Card`, admins only, in the right column under Runtime; it gets the amber ring in edit mode): the options the Buzz Desktop app holds today.
-  - Model (`Select`), Effort (`Select`) and Runtime (`Select`). A blank model means opus, and a blank effort shows as "default" (the model decides).
-  - Parallel turns (number `Input`, 1 to 8).
-  - Responds to (`RadioGroup`): Owner only, Owner + allowlist, Anyone in the channel. With the allowlist option, a tag field of people (`Badge`s with `x`, the same pattern as the setup wizard's tag fields). It shows names but saves pubkeys.
-  - The three timeouts (number `Input`s with a "min" suffix).
-  - Start with the hive (`Switch`).
-  - System prompt: the first lines in mono on `muted`, with an outline "Open editor" that opens a full-height `Sheet` with a mono `Textarea`.
-  - A changed field gets a small amber dot by its label and the old value under it, muted and struck through.
+- **Edit button:** an outline "`pencil` Edit" in the hero's button row, then an outline "`history` History". In edit mode the row becomes History, ghost "Cancel" and primary "Review and save".
+- **Edit mode:** an amber `pencil` "Editing" `Badge` beside the name, and an amber ring (`ring-2 ring-warning/40`) on the Agent settings card only. Everything else stays read-only.
+- **Toolkit stays read-only.** Buzz 1.0.6 has no relay home for it, so it gets no ring, no chip `x` buttons and no "Add…" input. Its footer reads "From agents/bumble.md · read-only".
+- **Agent settings** (`Card`, in the right column under Runtime): the fields a goose agent's `buzz.agent.settings` revision accepts, plus its instructions. The title row carries a muted "revision 14 · 2d ago".
+  - Model (`Select`, mono values) and Effort (`Select`). A blank effort shows as "default" (the model decides).
+  - Provider (`Select`, mono). The current default shows a muted "· default" after the value.
+  - Session scope: a three-way segmented `ToggleGroup`, Thread, Channel and Community. Under it, muted: "Changing scope starts a fresh session on the next turn."
+  - Runtime: read-only, the value in mono ("goose") with a muted `Badge`, "`lock` Set in Buzz Desktop". It's the `runtime` tag of the agent's profile, not a setting.
+  - Instructions: the first lines in mono on `muted` (`line-clamp-3`), with an outline "`file-pen-line` Open editor" that opens a full-height `Sheet` with a mono `Textarea`. A muted "1 line changed" under the preview once edited.
+  - A changed field gets a small amber dot by its label and the old value under it, muted, mono and struck through.
   - A muted `key-round` line at the bottom: "Keys and provider credentials stay on the hive host. They're never shown or edited here."
-- **Unsaved bar:** a sticky bar at the bottom of the main column while there are changes: "4 unsaved changes", ghost "Discard", primary "Review and save". Leaving the page with changes asks first (`AlertDialog`).
+- **Removed in 1.0.6:** Parallel turns, Responds to and its allowlist, the three timeouts and Start with the hive are no longer agent settings, so the card doesn't show them.
+- **Model and Effort values:** the dashboard can't read Desktop's model list. Offer the known values, and validate every field against the schema and `agentType` before signing, since a bad value stops the agent's next start. **Check during the build:** the Model and Effort lists for goose on 1.0.6.
+- **Unsaved bar:** a sticky bar at the bottom of the main column while there are changes: an amber dot, "3 unsaved changes", the changed field names muted ("Model, Effort, Instructions", hidden on phones), ghost "Discard" and primary "Review and save". Leaving the page with changes asks first (`AlertDialog`).
+- **Phones:** setting rows stack label over control, controls are 44px, and the unsaved bar floats 10px above the bottom edge.
 
-### Agent settings, reference-only (#109)
+### Agent settings, read-only
 
-The dashboard can't publish a config revision yet (see "Check during the build" under Saving), so until it can, the Agent settings card is **read-only reference**. Only admins see this card (viewers never get it, see Saving). Once publishing works, the card switches to the Edit and Review and save flow above and the lock pill goes away. Mockups: `buzz-dashboard/agent-settings-locked-*` on R2.
+The card shows read-only rows whenever the signed-in user can't edit: outside edit mode for the owner, always for another admin, and on a hive still on Buzz 0.X. Viewers never get the card (see Saving).
 
-- **Card:** has no `Select`s or edit ring. Every setting is a read-only row, with the label in muted text on the left and the value on the right. Model, Effort, Parallel turns and the timeouts are in mono. Long values (such as `us.anthropic.claude-haiku-5-5-v1:0`) truncate, show the full value in a `Tooltip`, and never push the row wider. The system prompt preview is `line-clamp-3`.
-- **Lock pill:** under the card title, a muted `Badge` reading "`lock` Managed in Buzz Desktop". Under it is a muted source line: "From the relay config · revision 14 · 2d ago". If the relay config can't be read, it falls back to the status feed's `model`, and the line reads "From the status feed".
-- **Button:** one outline "Change in Buzz Desktop" at the bottom of the card. Every field goes through it, so the card has one behaviour.
-- **Modal** (`Dialog`, a bottom `Sheet` on phones): titled "Change a setting in Buzz Desktop", with the muted line "The dashboard can't save agent settings yet."
-  - A Setting `Select` (Model, Effort, Runtime, Parallel turns, Responds to, a timeout) and a New value `Select` or `Input` for that setting. Under them, a muted "Now haiku" shows the current value in mono.
-  - Three numbered steps that fill in live from the picks, using the agent's real name: "Open Buzz Desktop → Agents → **Bumble** → Edit", "Set Model to **sonnet**", "Save. Bumble picks it up on its next turn."
-  - **Stopped agent:** a muted `info` note, "Bumble is stopped, so it won't see the change until it starts.", and step 3 becomes "Save, then **Start** Bumble so it loads the new value."
+- **Owner, not editing:** read-only rows, label muted on the left and value on the right: Model, Provider, Effort, Session scope, Runtime (with the "Set in Buzz Desktop" lock) and the Instructions preview. Model, Provider, Effort and Runtime are mono. Long values (such as `us.anthropic.claude-haiku-5-5-v1:0`) truncate, show the full value in a `Tooltip`, and never push the row wider. Under the title, a muted source line: "From the relay config · revision 14 · 2d ago".
+- **Admin who isn't the owner:** they aren't in the config channel, so they can't read the revision. The card shows a muted `Badge`, "`lock` Managed in Buzz Desktop", the source line "From the status feed", and only Model and Runtime from the status feed. Its `key-round` line reads "Only the owner's key can read and change this agent's config. The rest stays in Buzz Desktop."
+- **Before 1.0 or if the relay config can't be read:** the same status-feed fallback, and the #109 "Change in Buzz Desktop" button and steps modal below stay as the way to change a setting.
+- **#109 modal** (`Dialog`, a bottom `Sheet` on phones): titled "Change a setting in Buzz Desktop", with the muted line "The dashboard can't save agent settings on this hive."
+  - A Setting `Select` (Model, Effort, Provider, Session scope) and a New value `Select` for that setting. Under them, a muted "Now haiku" shows the current value in mono.
+  - Three numbered steps that fill in live from the picks, using the agent's real name: "Open Buzz Desktop → Agents → **Bumble** → Edit", "Set Model to **sonnet**", "Save. Bumble uses it from its next turn."
   - Buttons: outline "`copy` Copy steps" and primary "Done", both `whitespace-nowrap`. Copying puts the steps on the clipboard as plain numbered text and shows a `Sonner` toast reading "Steps copied". Nothing is ever saved or reverted.
-- **Effort values:** default, low, medium, high, xhigh and max, with a muted footer in the picker reading "default = the model decides". **Check during the build:** cut this list down to what Desktop's Effort field accepts for `claude-acp`.
 
 ### Edit profile (#113)
 
@@ -339,29 +339,32 @@ The avatar, display name and About live in the agent's own profile event, and on
 
 ### Saving
 
-Save never writes live. "Review and save" opens a `Dialog` (a full-screen `Sheet` on phones):
+Save never writes live. "Review and save" opens a `Dialog` (640px wide; a full-screen `Sheet` on phones), titled "Review and save · Bumble", with the muted line "Saving signs a new revision with your key and publishes it to the relay."
 
-- **Diff:** one block per part of the config that changed (settings, instructions, toolkit), the part's name in mono over a unified diff: removed lines on a 10% `destructive` tint with `-`, added lines on a 10% `success` tint with `+`. The `+`/`-` carry the meaning, not just the colour.
-- **Change note:** a prefilled `Input`, "Bumble: model to opus, add animate skill", editable. It's saved with the revision.
-- **Restart to apply:** a `Checkbox`, on by default, with the hint "The agent finishes its current turn first."
-- **Buttons:** ghost "Back to editing" and primary "Save".
-- **Where it writes (rtorcato, 2026-11-11):** Buzz 1.0 keeps each agent's settings and instructions on the relay, as revisions in a private per-agent config channel (NIP-AP, NIP-AR). Save publishes a new revision, signed in the browser by the admin's sign-in key, so history and revert come from the relay. There's no config-repo commit and no apply job. The dashboard never holds the agents' keys and never touches the Desktop app's files.
-- **The relay enforces, the UI only hides:** hiding Edit from viewers is presentation. The relay decides who may publish a revision and rejects anyone else, so the build never trusts the browser's role check. Viewers never receive system prompts or config revisions at all; the server leaves them out of the page data, not just out of view. A revision holds settings, instructions and the toolkit only, never env values, keys or credentials.
-- **Before 1.0:** on a hive still running Buzz 0.X there's no relay config to write, so Edit doesn't show and the agent page stays read-only.
-- **Check during the build:** whether the relay accepts a revision from an admin who isn't the agents' owner. If it doesn't, only the owner gets Edit, and other admins see it disabled with a `Tooltip`: "Only the owner's key can change agents on this hive."
-- **After saving:** a `Sonner` toast ("Saved. Bumble restarts after its current turn.") with a link to the revision. The Runtime card then shows the restart as it happens.
-- **Failure:** the dialog stays open with a destructive `Alert` in plain words ("Someone else changed Bumble's config since you opened it. Reload to see their change."). Nothing is lost.
+- **Diff:** one block per artifact that changed, `settings` and `instructions`. Each block has a header row in mono on `muted`: the artifact name on the left and a muted "revision 14 → 15" (or "1 line") on the right. Then a unified diff: removed lines on a 10% `destructive` tint with `-`, added lines on a 10% `success` tint with `+`, unchanged context lines muted. The `+`/`-` carry the meaning, not just the colour. On phones, long lines wrap.
+- **Change note:** a prefilled `Input`, "Bumble: model to opus, effort high, larger task ceiling", editable. It's saved with the revision and shows in History.
+- **When it applies:** a muted `info` line, "Bumble uses this from its next turn. No restart. A turn that's already running finishes on the old settings." There's no restart checkbox. A Session scope change starts a fresh session on that turn.
+- **Buttons:** ghost "Back to editing" and primary "Save". On phones they stack full width, Save on top.
+- **Where it writes:** each agent's settings and instructions are NIP-AR `kind:45010` revisions in its private NIP-CL config channel (labelled `agent-config`, `P` tag = owner). Save signs the new revision in the browser with the owner's sign-in key, with `prev` set to the current head, and posts it with NIP-98 through the existing write proxy. There's no config-repo commit and no apply job. The dashboard never holds the agents' keys and never touches the Desktop app's files.
+- **Keep what it doesn't know:** a revision keeps every field and tag the dashboard doesn't recognise, such as `preset` and `pluginNotes`, unchanged.
+- **Reads happen in the browser:** the config channel is read with the owner's signer, like the Memory card. The server's read identity never joins config channels, so prompts never reach the server.
+- **The relay enforces, the UI only hides:** hiding Edit is presentation. The relay decides who may publish a revision and rejects anyone else, so the build never trusts the browser's role check. Viewers never receive instructions or config revisions at all. A revision holds settings and instructions only, never env values, keys or credentials.
+- **Owner only:** an admin who isn't the owner sees Edit disabled (50% opacity, `aria-disabled`) with a `Tooltip`: "Only the owner's key can change agents on this hive." History is hidden for them, since they can't read it.
+- **Before 1.0:** on a hive still running Buzz 0.X there's no relay config to write, so Edit and History don't show and the card stays read-only.
+- **After saving:** a `Sonner` toast with a success `circle-check`: "Saved. Bumble uses it from its next turn.", then muted "Revision 15 · No restart needed" with "Revision 15" linking into History. The toast carries an outline "`rotate-ccw` Revert". The settings card shows "From the relay config · revision 15 · just now" and gets an outline "`rotate-ccw` Revert to 14" in its title row, so a bad value is one click from undone. Both Revert buttons open Review and save prefilled with revision 14.
+- **Conflict:** if the head moved since you opened the page, the relay rejects the stale `prev` and nothing is published. The dialog stays open with a destructive `Alert` above the diff: "**Not saved.** Someone else changed Bumble's config since you opened it. Reload to see their change. Your edits are kept." It has an outline "`refresh-cw` Reload and keep my edits", which re-reads the head and re-applies your edits on top, so the diff shows their change too.
+- **Other failures** (a validation error, the relay unreachable) use the same `Alert` in plain words. Nothing is lost.
 
 ### Config history
 
-Admins only, on Buzz 1.0 hives. On a 0.X hive it's hidden along with Edit.
+Owner only, on Buzz 1.0 hives. Hidden for other admins and on a 0.X hive.
 
-- **Button:** an outline "`history` History" next to the Editing badge in the hero. It works in and out of edit mode.
-- **Sheet:** a right-side `Sheet` (full screen on phones), titled "History · Bumble", with the muted line "Every save is a signed revision on the relay. Reverting publishes a new revision. It never deletes one."
-- **List:** newest first, one row per revision: "Revision 14" (500), a success "Live" `Badge` on the current one, the age, then muted "Sam · Model sonnet → opus · parallel turns 10 → 6" (signer name, then the change note saved with it).
-- **Detail:** picking a row opens "Revision 13 · what changed" under the list: the same diff blocks as the Save dialog (part name in mono, `+`/`-` lines on tints), then muted "Signed by Sam · npub1… (truncated, mono) · Nov 9, 4:12 PM".
-- **Revert:** an outline "`rotate-ccw` Revert to this" with the hint "Revert brings back revision 13 as revision 15." It opens the Save dialog prefilled with that revision and the note "Revert to revision 13", so it goes through the same review, restart checkbox and failure handling. History is never rewritten. Hidden on the live revision.
-- **Data:** the NIP-AP/NIP-AR revisions the Save flow publishes. Viewers never receive them (see Saving).
+- **Button:** an outline "`history` History" in the hero's button row. It works in and out of edit mode.
+- **Sheet:** a right-side `Sheet`, 560px (full screen on phones), titled "History · Bumble", with the muted line "Every save is a signed revision on the relay. Reverting publishes a new revision. It never deletes one."
+- **List:** newest first, 100 per page (NIP-98 `/query` with `artifact: history`). One bordered row per revision: "Revision 15" (500), a success "Live" `Badge` on the current head, the age on the right, then muted "rtorcato · model to opus, effort high, larger task ceiling" (signer name, then the change note). A revision Desktop wrote shows "Buzz Desktop" as the signer. The selected row gets a 10% `primary` tint and border.
+- **Detail:** picking a row opens "Revision 14 · what changed" under the list: the same diff blocks as Review and save, with the header's right side reading "13 → 14", then muted "Signed by rtorcato · npub1q8w…4kz2 (mono, truncated) · Nov 20, 4:12 PM".
+- **Revert:** an outline "`rotate-ccw` Revert to this" at the right of the detail heading, with the muted hint "Revert brings back revision 14 as revision 16, through Review and save." It opens Review and save prefilled with that revision and the note "Revert to revision 14", so it goes through the same review and conflict handling. It publishes a new `op=update` (`op=restore` over a deleted head), following Desktop's `revertTemplate`. History is never rewritten. Hidden on the live revision.
+- **Data:** the `kind:45010` revisions the Save flow publishes, read in the browser with the owner's signer. Viewers and other admins never receive them (see Saving).
 
 ### Sign-in and roles
 
@@ -785,7 +788,7 @@ A `max-w-[1040px]` page: a 240px stepper column, then the step `Card`, with a 40
 
 ## Components
 
-Use stock shadcn/ui only, with no custom components: `Card`, `Badge`, `Table`, `ToggleGroup`, `Select`, `Avatar`, `Alert`, `Button`, `Dialog`, `Tooltip` and `ScrollArea`. Use shadcn charts (`ChartContainer` + Recharts `BarChart`) for every chart. One exception: the Agents card's 7-day sparkline is a small inline SVG, because it has no axes, tooltip or legend to justify adding Recharts. Switch it to a `BarChart` once another view adds Recharts. Icons come from `lucide-react`. The agent page adds `Breadcrumb` and `Skeleton`. The sidebar and Settings (#58) add `Sidebar`, `Sheet`, `Separator`, `Switch`, `Input` and `AlertDialog`. The history views (#39 to #47) add `Tabs`, `DropdownMenu`, `RadioGroup` and `Checkbox` (the signer dialog); their charts are stacked `BarChart`s (vertical for Health and Cost, `layout="vertical"` for the Flow step bars). The thin per-row bars in the Flow PR table and the Cost top-agents table are plain flex `div`s, like the sparkline, since they have no axes or tooltip. The setup wizard (#73) adds `Collapsible` and `Textarea`. Editing agents adds `Sonner` for the save toast. Two new packages: `qrcode` for the sign-in QR code (rendered as SVG) and `react-markdown` for the Memory card (raw HTML off). Config history reuses `Sheet`. The tag fields (Add a hive's admin and viewer lists, and Responds to's allowlist) are `Badge`s inside an `Input`-styled box, and the setup wizard's phone progress bar is plain `div`s. The one non-shadcn component is [motion-primitives](https://motion-primitives.com) `AnimatedNumber`, which brings in the `motion` package (approved by rtorcato on 2026-10-16). Two [Magic UI](https://magicui.design) components, `AnimatedShinyText` and `BlurFade`, are copied in through the shadcn registry and use the same `motion` package, so they add no new dependency. See Motion.
+Use stock shadcn/ui only, with no custom components: `Card`, `Badge`, `Table`, `ToggleGroup`, `Select`, `Avatar`, `Alert`, `Button`, `Dialog`, `Tooltip` and `ScrollArea`. Use shadcn charts (`ChartContainer` + Recharts `BarChart`) for every chart. One exception: the Agents card's 7-day sparkline is a small inline SVG, because it has no axes, tooltip or legend to justify adding Recharts. Switch it to a `BarChart` once another view adds Recharts. Icons come from `lucide-react`. The agent page adds `Breadcrumb` and `Skeleton`. The sidebar and Settings (#58) add `Sidebar`, `Sheet`, `Separator`, `Switch`, `Input` and `AlertDialog`. The history views (#39 to #47) add `Tabs`, `DropdownMenu`, `RadioGroup` and `Checkbox` (the signer dialog); their charts are stacked `BarChart`s (vertical for Health and Cost, `layout="vertical"` for the Flow step bars). The thin per-row bars in the Flow PR table and the Cost top-agents table are plain flex `div`s, like the sparkline, since they have no axes or tooltip. The setup wizard (#73) adds `Collapsible` and `Textarea`. Editing agents adds `Sonner` for the save toast. Two new packages: `qrcode` for the sign-in QR code (rendered as SVG) and `react-markdown` for the Memory card (raw HTML off). Config history reuses `Sheet`. The tag fields (Add a hive's admin and viewer lists) are `Badge`s inside an `Input`-styled box, and the setup wizard's phone progress bar is plain `div`s. The one non-shadcn component is [motion-primitives](https://motion-primitives.com) `AnimatedNumber`, which brings in the `motion` package (approved by rtorcato on 2026-10-16). Two [Magic UI](https://magicui.design) components, `AnimatedShinyText` and `BlurFade`, are copied in through the shadcn registry and use the same `motion` package, so they add no new dependency. See Motion.
 
 ## Motion
 
@@ -842,7 +845,7 @@ Approved by rtorcato on 2026-11-11. Layouts are as specced above; this adds moti
 | Memory: Copy | Icon swap to a check and text swap to "Copied"; both revert after 1.6s. | 180ms |
 | Memory: core meter | Fills once with `scaleX` on first view of the card, never on refresh. | 300ms `--ease-out` |
 | Config history: sheet | shadcn `Sheet` opens with `translateX` and closes faster along the same path; the overlay fades. Revisions enter with a stagger. | open 300ms `--ease-drawer`, close 200ms `--ease-out`; rows 260ms, 80ms + 35ms × index |
-| Config history: Revert to this | "Publishing…" shimmers on the button, then a success check. The new revision enters at the top of the list, the Live tag slides to it, and a Sonner toast rises. | as shared effects; Sonner default |
+| Config history: Revert to this | Opens Review and save. On Save, "Publishing…" shimmers on the button, then a success check. The new revision enters at the top of the list, the Live tag slides to it, and a Sonner toast rises. | as shared effects; Sonner default |
 | Hive switcher: menu | `DropdownMenu` grows from the trigger (`transform-origin` at the trigger) with fade and scale 0.96 → 1. Items tint on hover. | 180ms in, 120ms out; hover 120ms |
 | Hive switcher: icons | Each tile shows initials until its relay's icon loads, then the icon fades in from `blur(4px)`. Only on first load: an icon already in the browser cache shows at once with no fade. | 260ms `--ease-out` |
 | Hive switcher: ⌘1 to ⌘9 | **No animation.** Keyboard shortcuts are used dozens of times a day, so they switch instantly. | — |
