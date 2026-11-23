@@ -134,6 +134,76 @@ export async function configRead(
   return res.json();
 }
 
+export type ConfigSaveAnswer =
+  | { ok: true; event: SignedEvent }
+  | { ok: false; message: string };
+
+/**
+ * Signs one agent config revision (#195) and posts it straight from this
+ * browser to `<relay>/events` with NIP-98 auth, like the reads in #194, so
+ * the instructions never pass through the dashboard server. The relay
+ * checks `prev` and refuses a stale one with a `conflict:` message.
+ */
+export async function configWrite(
+  n: Nip07,
+  relay: string,
+  template: EventTemplate,
+): Promise<ConfigSaveAnswer> {
+  const event = await sign(n, template);
+  const url = `${relay}/events`;
+  const body = JSON.stringify(event);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: await httpAuth(n, url, body),
+      },
+      body,
+      credentials: "omit",
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (err) {
+    if (err instanceof SignError) throw err;
+    return {
+      ok: false,
+      message: "Can't reach the Buzz relay from this browser.",
+    };
+  }
+  const answer = (await res.json().catch(() => null)) as {
+    accepted?: unknown;
+    message?: unknown;
+    error?: unknown;
+    event_id?: unknown;
+  } | null;
+  const said =
+    typeof answer?.message === "string" && answer.message
+      ? answer.message
+      : typeof answer?.error === "string"
+        ? answer.error
+        : "";
+  // A duplicate is the same revision already accepted.
+  if (/^duplicate:/.test(said)) return { ok: true, event };
+  if (!res.ok || answer?.accepted === false) {
+    return {
+      ok: false,
+      message: said || `The relay refused it (${res.status}).`,
+    };
+  }
+  // Only the relay's own yes counts. A 200 from anything else (a proxy's
+  // HTML page, an empty body) isn't proof the revision was published.
+  if (answer?.accepted === true || answer?.event_id === event.id) {
+    return { ok: true, event };
+  }
+  return {
+    ok: false,
+    message:
+      "The relay's answer wasn't readable, so it may not have saved. Reload to check.",
+  };
+}
+
 /** A signed registry write (#166): a NIP-98 event for this URL and body. */
 export async function registryWrite(
   n: Nip07,

@@ -12,12 +12,16 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
+import {
+  AgentConfigButtons,
+  AgentConfigProvider,
+  EditingBadge,
+  type RelayConfigTarget,
+  UnsavedBar,
+} from "@/components/agent-config-edit";
 import { AgentMessages } from "@/components/agent-messages";
 import { EditProfile } from "@/components/agent-profile";
-import {
-  AgentSettings,
-  type RelayConfigTarget,
-} from "@/components/agent-settings";
+import { AgentSettings } from "@/components/agent-settings";
 import {
   Avatar,
   type FeedInfo,
@@ -113,7 +117,7 @@ export function AgentDetail({
       ? `https://github.com/search?type=pullrequests&q=${encodeURIComponent(`${users} is:pr "@${a.name}"`)}`
       : null;
 
-  return (
+  const page = (
     <div className="space-y-4">
       <Breadcrumb>
         <BreadcrumbList>
@@ -161,6 +165,7 @@ export function AgentDetail({
                   </h1>
                 </Morph>
                 <StatusBadge status={status} />
+                <EditingBadge />
               </div>
               <p className="text-muted-foreground">
                 {a.role && `${a.role} · `}
@@ -178,6 +183,7 @@ export function AgentDetail({
                 )}
                 {prsUrl && <OutLink href={prsUrl}>PRs</OutLink>}
                 {admin && <EditProfile agent={a} />}
+                {admin && <AgentConfigButtons />}
               </div>
             )}
           </div>
@@ -263,7 +269,6 @@ export function AgentDetail({
           {admin && (
             <AgentSettings
               name={a.name}
-              target={configTarget}
               className="order-2 xl:order-none"
               data={{
                 model: runtime?.model ?? null,
@@ -295,7 +300,15 @@ export function AgentDetail({
           </Section>
         </div>
       </div>
+      <UnsavedBar />
     </div>
+  );
+  return admin ? (
+    <AgentConfigProvider name={a.name} target={configTarget}>
+      {page}
+    </AgentConfigProvider>
+  ) : (
+    page
   );
 }
 

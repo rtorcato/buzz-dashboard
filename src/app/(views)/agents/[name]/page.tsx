@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import type { RelayConfigTarget } from "@/components/agent-config-edit";
 import { AgentDetail, type AgentPr } from "@/components/agent-detail";
-import type { RelayConfigTarget } from "@/components/agent-settings";
 import { byDay, findAgent, runtimeFor } from "@/lib/agents";
-import { getOwner } from "@/lib/auth";
+import { authMode, getOwner, ownerPubkeys } from "@/lib/auth";
 import { relayHttpBase } from "@/lib/buzz-dm";
 import { buzzWebUrl, readServerEnv } from "@/lib/env";
 import { envList, loadGitHub } from "@/lib/github";
@@ -64,7 +64,20 @@ export default async function AgentPage({ params }: Props) {
     : null;
   // The owner's browser reads the agent's relay config (#194). It needs the
   // relay's origin and own key; neither is a secret.
-  const target = owner ? await configTarget(agent.pubkeys[0]) : null;
+  // Only the owner (the first key in BUZZ_OWNER_PUBKEY) can edit (#195); the
+  // models any agent on this hive runs are the Model choices.
+  const target = owner
+    ? await configTarget(agent.pubkeys[0], {
+        owner: authMode() === "nostr" ? (ownerPubkeys()[0] ?? null) : null,
+        models: [
+          ...new Set(
+            Object.values(feed?.runtime ?? {}).flatMap((r) =>
+              r.model ? [r.model] : [],
+            ),
+          ),
+        ],
+      })
+    : null;
   // The same @Name attribution as Pipeline, newest first.
   const prs: AgentPr[] = (github?.prs ?? [])
     .filter((p) => p.isPr && p.agent === agent.name)
@@ -105,7 +118,10 @@ export default async function AgentPage({ params }: Props) {
   );
 }
 
-async function configTarget(agent: string): Promise<RelayConfigTarget | null> {
+async function configTarget(
+  agent: string,
+  extra: Pick<RelayConfigTarget, "owner" | "models">,
+): Promise<RelayConfigTarget | null> {
   let relay: string | null = null;
   try {
     relay = relayHttpBase(readServerEnv().buzzRelayUrl);
@@ -113,5 +129,7 @@ async function configTarget(agent: string): Promise<RelayConfigTarget | null> {
     relay = null;
   }
   const self = relay && (await relaySelf(relay));
-  return relay && self && agent ? { relay, relaySelf: self, agent } : null;
+  return relay && self && agent
+    ? { relay, relaySelf: self, agent, ...extra }
+    : null;
 }

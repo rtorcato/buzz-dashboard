@@ -75,6 +75,17 @@ The agent page reads them in your browser instead. When you're signed in as the 
 - This needs the relay to accept cross-origin requests from the dashboard's address. Buzz relays allow any origin unless `BUZZ_CORS_ORIGINS` is set. If yours sets it, add the dashboard's origin.
 - Without an extension, or if a read fails, the card falls back to the status feed and says why.
 
+## Saving agent config is signed by the owner
+
+The owner can change a goose agent's model, effort, session scope and instructions from the agent page, and can set its provider back to the runtime default. Picking a different provider stays in Buzz Desktop, because the dashboard can't list the providers goose has set up. Edit opens the fields in place, and Review and save shows the change as a diff before anything is sent.
+
+- Save asks your extension to sign a new revision with the current one as its `prev`, then posts it from your browser straight to the relay's `/events` endpoint with NIP-98 auth. The dashboard server never sees the revision, so instructions never pass through it.
+- The relay decides who may publish. It accepts revisions only from members of the agent's config channel, which is the owner's key. Another admin sees Edit disabled, but hiding the button is presentation only.
+- If someone else saved since you opened the page, the relay refuses the stale `prev` and nothing is published. Your edits stay, and "Reload and keep my edits" re-reads the config and applies them on top.
+- A revision keeps every field and tag the dashboard doesn't know, such as `preset` and `pluginNotes`. It never holds keys, env values or provider credentials.
+- Model and Effort only offer values this hive already runs, plus the runtime default. goose takes the model IDs and thinking levels its provider offers, and a value it doesn't offer would fail the agent's next turn. Change to anything else in Buzz Desktop.
+- The agent uses the new revision from its next turn. There is no restart. After a save, "Revert to N" publishes the previous revision again as a new one. History is never rewritten. A revert brings back the old settings as they were, so it skips the Model and Effort lists. It still passes the schema check, but if the old model is one goose no longer offers, change it in Buzz Desktop.
+
 ## Secrets stay on the server
 
 Every variable is read on the server. Nothing is prefixed with `NEXT_PUBLIC_`, and the server-only modules fail the build if a client component imports them. The browser only receives rendered pages and public media URLs.
