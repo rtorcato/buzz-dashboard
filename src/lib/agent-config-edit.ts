@@ -394,19 +394,31 @@ export function refusalText(name: string, message: string): string {
 
 /**
  * Settings content that brings back `target` (an older revision) over the
- * current head, like Desktop's `revertTemplate`: the old body as it was.
- * Still checked, so a revision the runtime would now refuse isn't signed.
+ * current `head`, like Desktop's `revertTemplate`: the old body as it was,
+ * except that the head's `pluginNotes` stay, since a plugin's memory of the
+ * agent isn't a setting to undo. Still checked, so a revision the runtime
+ * would now refuse isn't signed.
  */
 export function revertSettingsContent(
   target: ConfigEvent,
+  head?: ConfigEvent,
 ): { content: string } | { problem: string } {
+  if (tagOf(target, "op") === "delete") {
+    return { problem: "A deleted revision can't be brought back." };
+  }
   let body: SettingsBody;
   try {
     body = JSON.parse(target.content) as SettingsBody;
   } catch {
     return { problem: "That revision's settings aren't readable." };
   }
-  if (!body || typeof body.settings !== "object" || !body.settings) {
+  if (
+    !body ||
+    typeof body !== "object" ||
+    typeof body.settings !== "object" ||
+    !body.settings ||
+    Array.isArray(body.settings)
+  ) {
     return { problem: "That revision has no settings." };
   }
   const problem = settingsDraftProblem(
@@ -414,7 +426,51 @@ export function revertSettingsContent(
     body.settings,
     body.settings,
   );
-  return problem ? { problem } : { content: target.content };
+  if (problem) return { problem };
+  const { pluginNotes: theirs, ...rest } = body;
+  let notes: unknown = theirs;
+  if (head && tagOf(head, "op") !== "delete") {
+    try {
+      const current = JSON.parse(head.content) as { pluginNotes?: unknown };
+      if (current && typeof current === "object") notes = current.pluginNotes;
+    } catch {
+      // An unreadable head has no notes to keep: the target's stay.
+    }
+  }
+  // Same notes: the old body byte for byte, so the diff shows nothing new.
+  if (JSON.stringify(notes) === JSON.stringify(theirs)) {
+    return { content: target.content };
+  }
+  const content = JSON.stringify(
+    notes === undefined ? rest : { ...rest, pluginNotes: notes },
+  );
+  if (bytes(content) > SETTINGS_MAX_BYTES) {
+    return { problem: "That revision's settings are too large to save." };
+  }
+  return { content };
+}
+
+/** Instructions content that brings back `target`, as it was. */
+export function revertInstructionsContent(
+  target: ConfigEvent,
+): { content: string } | { problem: string } {
+  if (tagOf(target, "op") === "delete") {
+    return { problem: "A deleted revision can't be brought back." };
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(target.content);
+  } catch {
+    return { problem: "That revision's instructions aren't readable." };
+  }
+  const text = (body as { text?: unknown } | null)?.text;
+  if (typeof text !== "string" || text.includes("\u0000")) {
+    return { problem: "That revision has no usable instructions." };
+  }
+  if (bytes(target.content) > INSTRUCTIONS_MAX_BYTES) {
+    return { problem: "That revision's instructions are too long to save." };
+  }
+  return { content: target.content };
 }
 
 /** The edits that differ from `base`; an edit back to the base drops out. */

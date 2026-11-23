@@ -57,6 +57,8 @@ import {
   type AgentConfig,
   type AgentSettingsValues,
   type ConfigEvent,
+  type ConfigQuery,
+  INSTRUCTIONS_TYPE,
   readAgentConfig,
   readFailure,
 } from "@/lib/agent-config";
@@ -72,6 +74,7 @@ import {
   pruneEdits,
   refusalOf,
   refusalText,
+  revertInstructionsContent,
   revertSettingsContent,
   revisionTemplate,
   type SettingsDraft,
@@ -117,6 +120,18 @@ type Pending = {
   settings: string | null;
   instructions: string | null;
   problem: string | null;
+  /** A muted line under the diff, such as a part a revert leaves alone. */
+  notice: string | null;
+};
+
+/** The snapshots a revert brings back (#196); null leaves that part alone. */
+export type RevertTo = {
+  /** For the note: "revision 14" → "Revert to revision 14". */
+  label: string;
+  settings: ConfigEvent | null;
+  instructions: ConfigEvent | null;
+  /** Parts left as they are because their old revision isn't loaded. */
+  skipped: string[];
 };
 
 /** The revisions the last save replaced, for "Revert to N". */
@@ -145,6 +160,12 @@ type Ctx = {
   setInstructions: (text: string) => void;
   openReview: () => void;
   openRevert: () => void;
+  /** Opens Review and save prefilled with older snapshots (History). */
+  revertTo: (target: RevertTo) => void;
+  /** Signs and sends one config read, or null without a relay or signer. */
+  query: ConfigQuery | null;
+  /** The signer's key once it answered, else null. */
+  signer: string | null;
 };
 
 const AgentConfigContext = createContext<Ctx | null>(null);
@@ -173,6 +194,8 @@ export function AgentConfigProvider({
   const [instructions, setInstr] = useState<string | null>(null);
   const [review, setReview] = useState<"edit" | "revert" | null>(null);
   const [prior, setPrior] = useState<Prior | null>(null);
+  const [reverting, setReverting] = useState<RevertTo | null>(null);
+  const [signer, setSigner] = useState<string | null>(null);
   const relay = target?.relay;
   const relaySelf = target?.relaySelf;
   const agent = target?.agent;
@@ -184,6 +207,7 @@ export function AgentConfigProvider({
     let signer: string;
     try {
       signer = await n.getPublicKey();
+      setSigner(signer);
     } catch {
       setRead({ state: "failed", why: "Your signer didn't answer." });
       return null;
@@ -251,6 +275,18 @@ export function AgentConfigProvider({
     instructions !== null && instructions !== baseInstructions;
   const changed = editing ? changedLabels(liveEdits, instructionsChanged) : [];
 
+  const priorTarget = (p: Prior): RevertTo => ({
+    label: `revision ${p.revision ?? "before"}`,
+    settings: p.settings,
+    instructions: p.instructions,
+    skipped: [],
+  });
+  const query = useMemo<ConfigQuery | null>(() => {
+    const n = nostrExtension();
+    return relay && n ? (path, f) => configRead(n, relay, path, f) : null;
+    // The extension is read once per relay; it doesn't change under a page.
+  }, [relay]);
+
   const reset = () => {
     setEdits({});
     setInstr(null);
@@ -276,34 +312,65 @@ export function AgentConfigProvider({
     setEdit: (key, value) => setEdits((e) => ({ ...e, [key]: value })),
     setInstructions: setInstr,
     openReview: () => changed.length > 0 && setReview("edit"),
-    openRevert: () => prior && setReview("revert"),
+    openRevert: () => {
+      if (!prior) return;
+      setReverting(priorTarget(prior));
+      setReview("revert");
+    },
+    revertTo: (t) => {
+      if (role !== "owner") return;
+      setReverting(t);
+      setReview("revert");
+    },
+    query: role === "owner" ? query : null,
+    signer,
   };
 
   const pending = useMemo<Pending | null>(() => {
     if (!review || !config) return null;
     const s = config.settings;
     const i = config.instructions;
-    if (s.state === "missing" || i.state === "missing") return null;
     if (review === "revert") {
-      if (!prior) return null;
+      if (!reverting) return null;
       let problem: string | null = null;
       let settingsContent: string | null = null;
-      if (prior.settings && prior.settings.content !== s.event.content) {
-        const r = revertSettingsContent(prior.settings);
-        if ("problem" in r) problem = r.problem;
-        else settingsContent = r.content;
+      let instructionsContent: string | null = null;
+      const left = [...reverting.skipped];
+      if (reverting.settings) {
+        if (s.state === "missing") left.push("settings");
+        else {
+          const r = revertSettingsContent(reverting.settings, s.event);
+          if ("problem" in r) problem = r.problem;
+          else if (r.content !== s.event.content) settingsContent = r.content;
+        }
       }
-      const instructionsContent =
-        prior.instructions && prior.instructions.content !== i.event.content
-          ? prior.instructions.content
-          : null;
+      if (reverting.instructions) {
+        if (i.state === "missing") left.push(INSTRUCTIONS_TYPE);
+        else {
+          const r = revertInstructionsContent(reverting.instructions);
+          if ("problem" in r) problem ??= r.problem;
+          else if (r.content !== i.event.content)
+            instructionsContent = r.content;
+        }
+      }
+      const parts = [
+        ...new Set(
+          left.map((t) =>
+            t === INSTRUCTIONS_TYPE ? "instructions" : "settings",
+          ),
+        ),
+      ];
       return {
         kind: "revert",
         settings: settingsContent,
         instructions: instructionsContent,
         problem,
+        notice: parts.length
+          ? `The ${parts.join(" and ")} stay as they are: that revision isn't loaded.`
+          : null,
       };
     }
+    if (s.state === "missing" || i.state === "missing") return null;
     let problem: string | null = null;
     let settingsContent: string | null = null;
     let instructionsContent: string | null = null;
@@ -322,11 +389,12 @@ export function AgentConfigProvider({
       settings: settingsContent,
       instructions: instructionsContent,
       problem,
+      notice: null,
     };
   }, [
     review,
     config,
-    prior,
+    reverting,
     liveEdits,
     choices,
     instructions,
@@ -335,7 +403,7 @@ export function AgentConfigProvider({
 
   const defaultNote =
     review === "revert"
-      ? `Revert to revision ${prior?.revision ?? "before"}`
+      ? `Revert to ${reverting?.label ?? "an earlier revision"}`
       : changeNote(
           name,
           baseDraft,
@@ -345,12 +413,13 @@ export function AgentConfigProvider({
 
   const saved = (from: AgentConfig) => {
     const revision = from.revision;
-    setPrior({
+    const replaced: Prior = {
       settings: from.settings.state === "missing" ? null : from.settings.event,
       instructions:
         from.instructions.state === "missing" ? null : from.instructions.event,
       revision,
-    });
+    };
+    setPrior(replaced);
     reset();
     setEditing(false);
     setReview(null);
@@ -367,7 +436,10 @@ export function AgentConfigProvider({
             Revert
           </span>
         ),
-        onClick: () => setReview("revert"),
+        onClick: () => {
+          setReverting(priorTarget(replaced));
+          setReview("revert");
+        },
       },
     });
   };
@@ -712,6 +784,9 @@ function ReviewDialog({
         {blocks.map((b) => (
           <DiffBlock key={b.title} {...b} />
         ))}
+        {pending?.notice && (
+          <p className="text-sm text-muted-foreground">{pending.notice}</p>
+        )}
         <div className="grid gap-1.5 text-sm">
           <label htmlFor={noteId} className="text-muted-foreground">
             Change note
@@ -756,7 +831,7 @@ function ReviewDialog({
   );
 }
 
-const instructionsText = (content: string) => {
+export const instructionsText = (content: string) => {
   try {
     const t = (JSON.parse(content) as { text?: unknown }).text;
     return typeof t === "string" ? t : "";
@@ -765,7 +840,7 @@ const instructionsText = (content: string) => {
   }
 };
 
-function DiffBlock({
+export function DiffBlock({
   title,
   right,
   lines,

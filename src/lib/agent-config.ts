@@ -241,7 +241,8 @@ const isEvent = (v: unknown): v is ConfigEvent => {
   );
 };
 
-const events = (answer: unknown): ConfigEvent[] => {
+/** The well-formed events in a relay answer; throws if it isn't a list. */
+export const configEvents = (answer: unknown): ConfigEvent[] => {
   if (!Array.isArray(answer)) throw new ConfigReadError("unreadable");
   return answer.filter(isEvent);
 };
@@ -301,7 +302,7 @@ export async function readAgentConfig(
   if (![ids.relaySelf, ids.owner, ids.agent].every((k) => HEX64.test(k)))
     throw new ConfigReadError("unreadable");
   const channel = pickConfigChannel(
-    events(
+    configEvents(
       await query(
         "query",
         discoveryFilter(ids.relaySelf, ids.owner, ids.agent),
@@ -316,7 +317,7 @@ export async function readAgentConfig(
     artifactD(SETTINGS_TYPE, channel.id),
     artifactD(INSTRUCTIONS_TYPE, channel.id),
   ]);
-  const current = events(await query("query", currentFilter(channel.id)));
+  const current = configEvents(await query("query", currentFilter(channel.id)));
   // A full page may be truncated, and two heads for one `d` decide nothing.
   if (current.length >= CURRENT_LIMIT) throw new ConfigReadError("unreadable");
   const heads = new Map<string, ConfigEvent>();
@@ -358,7 +359,8 @@ export async function readAgentConfig(
   };
 }
 
-const agoText = (s: number) => {
+/** "just now", "5m ago", "3h ago", "2d ago". */
+export const agoText = (s: number) => {
   if (s < 60) return "just now";
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
