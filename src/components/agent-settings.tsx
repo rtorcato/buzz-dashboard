@@ -125,16 +125,21 @@ export function AgentSettings({
   const instructions =
     config?.instructions.state === "ok" ? config.instructions.value : null;
   const problem = config && settingsProblem(config);
+  // The #109 steps modal still covers Model and Effort.
   const rows: [Setting, string | null][] = [
     ["Model", settings ? settings.model : data.model],
     ["Effort", settings ? settings.effort : data.effort],
   ];
-  const extra: [string, string | null][] = settings
+  // DESIGN.md → "Agent settings, read-only": the owner's rows, in this order.
+  const shown: [string, string | null][] = settings
     ? [
+        ["Model", settings.model],
         ["Provider", settings.provider],
+        ["Effort", settings.effort],
         ["Session scope", settings.scope],
+        ["Runtime", settings.agentType],
       ]
-    : [];
+    : rows;
   const source = config
     ? configSource(config, Math.floor(Date.now() / 1000))
     : read.state === "reading"
@@ -144,10 +149,12 @@ export function AgentSettings({
     <Card className={`gap-4 p-5 ${className}`}>
       <div className="space-y-2">
         <h2 className="font-semibold">Agent settings</h2>
-        <Badge variant="outline" className="text-muted-foreground">
-          <Lock aria-hidden />
-          Managed in Buzz Desktop
-        </Badge>
+        {!settings && (
+          <Badge variant="outline" className="text-muted-foreground">
+            <Lock aria-hidden />
+            Managed in Buzz Desktop
+          </Badge>
+        )}
         <p className="text-xs text-muted-foreground" aria-live="polite">
           {source}
         </p>
@@ -164,9 +171,17 @@ export function AgentSettings({
         )}
       </div>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
-        {[...rows, ...extra].map(([k, v]) => (
+        {shown.map(([k, v]) => (
           <div key={k} className="contents">
-            <dt className="text-muted-foreground">{k}</dt>
+            <dt className="text-muted-foreground">
+              {k}
+              {k === "Runtime" && (
+                <span className="ml-1.5 inline-flex items-center gap-1 text-xs">
+                  <Lock className="size-3" aria-hidden />
+                  Set in Buzz Desktop
+                </span>
+              )}
+            </dt>
             <dd className="min-w-0 text-right">
               {v === null ? (
                 <span className="text-muted-foreground">Not reported</span>
@@ -174,7 +189,9 @@ export function AgentSettings({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <span className="block truncate font-mono text-xs leading-5" />
+                      <span
+                        className={`block truncate leading-5 ${k === "Session scope" ? "" : "font-mono text-xs"}`}
+                      />
                     }
                   >
                     {v}

@@ -94,8 +94,9 @@ export async function relayWrite(
 }
 
 /**
- * One owner-signed agent config read (#194): signs the relay's HTTP auth for
- * `[filter]` and has the dashboard pass both to `<relay>/<path>` unchanged.
+ * One owner-signed agent config read (#194), sent straight from this browser
+ * to `<relay>/<path>` with NIP-98 auth for `[filter]`. The dashboard server
+ * never sees the request or the answer, so prompts never reach it.
  */
 export async function configRead(
   n: Nip07,
@@ -103,15 +104,32 @@ export async function configRead(
   path: "query" | "count",
   filter: Record<string, unknown>,
 ): Promise<unknown> {
+  const url = `${relay}/${path}`;
   const body = JSON.stringify([filter]);
-  const authorization = await httpAuth(n, `${relay}/${path}`, body);
-  const res = await fetch("/api/agent-config", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, body, authorization }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: await httpAuth(n, url, body),
+      },
+      body,
+      credentials: "omit",
+      redirect: "error",
+      cache: "no-store",
+    });
+  } catch (err) {
+    if (err instanceof SignError) throw err;
+    throw new SignError("Can't reach the Buzz relay from this browser.");
+  }
   if (!res.ok) {
-    throw new SignError(await errorOf(res, "The relay didn't answer."));
+    throw new SignError(
+      (await errorOf(res, `The relay refused the read (${res.status}).`)).slice(
+        0,
+        200,
+      ),
+    );
   }
   return res.json();
 }

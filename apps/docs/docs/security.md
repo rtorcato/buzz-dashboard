@@ -69,10 +69,10 @@ Use a fresh credential for each source, with the permissions listed in [Optional
 
 On Buzz 1.0, each agent's settings and instructions live in a private config channel on the relay. The dashboard's relay identity is never added to those channels, so the server can't read them on its own.
 
-The agent page reads them in your browser instead. When you're signed in as the owner with a NIP-07 extension, the Agent settings card asks the extension to sign three short reads: find the agent's config channel, read its current settings and instructions, and count the settings revisions. The card then shows the model, effort, provider, session scope and the start of the instructions, with a line such as "From the relay config · revision 14 · 2d ago".
+The agent page reads them in your browser instead. When you're signed in as the owner with a NIP-07 extension, the Agent settings card asks the extension to sign three short reads: find the agent's config channel, read its current settings and instructions, and count the settings revisions. The card then shows the model, provider, effort, session scope, runtime and the start of the instructions, with a line such as "From the relay config · revision 14 · 2d ago".
 
-- Each read is signed for one relay URL and one exact body. The dashboard checks the signature is yours, then passes the read to the relay unchanged and passes the answer back. It stores and logs nothing.
-- The route only passes those config reads. It refuses any other filter, so it can't be used to read other channels with your signature.
+- Your browser sends each read straight to the relay's `/query` (or `/count`) endpoint, signed for that URL and that exact body. The dashboard server never sees the request or the answer, so instructions never reach it.
+- This needs the relay to accept cross-origin requests from the dashboard's address. Buzz relays allow any origin unless `BUZZ_CORS_ORIGINS` is set. If yours sets it, add the dashboard's origin.
 - Without an extension, or if a read fails, the card falls back to the status feed and says why.
 
 ## Secrets stay on the server

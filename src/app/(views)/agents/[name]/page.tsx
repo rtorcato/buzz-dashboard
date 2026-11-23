@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AgentDetail, type AgentPr } from "@/components/agent-detail";
 import type { RelayConfigTarget } from "@/components/agent-settings";
-import { relaySelf } from "@/lib/agent-config-proxy";
 import { byDay, findAgent, runtimeFor } from "@/lib/agents";
 import { getOwner } from "@/lib/auth";
 import { relayHttpBase } from "@/lib/buzz-dm";
@@ -13,6 +12,7 @@ import { healthSource } from "@/lib/health-data";
 import { healthBuckets } from "@/lib/history";
 import { dayStarts, getActivity, loadHive } from "@/lib/hive";
 import { turnSeries } from "@/lib/overview";
+import { relaySelf } from "@/lib/relay-info";
 import { loadStatusFeed } from "@/lib/status-feed";
 
 type Props = { params: Promise<{ name: string }> };
