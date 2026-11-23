@@ -95,6 +95,39 @@ describe("proxy", () => {
   });
 });
 
+describe("needs-you read token (#193)", () => {
+  const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
+
+  it("opens only /api/needs-you, and only for the right token", async () => {
+    gate("proxy");
+    vi.stubEnv("NEEDS_YOU_READ_TOKEN", "tok-123");
+    expect(passed(proxy(req("/api/needs-you", bearer("tok-123"))))).toBe(true);
+    expect(passed(proxy(req("/api/needs-you")))).toBe(false);
+    const wrong = proxy(req("/api/needs-you", bearer("tok-124")));
+    expect(wrong.status).toBe(401);
+    expect(await wrong.json()).toEqual({ error: "sign-in required" });
+    expect(passed(proxy(req("/api/alerts", bearer("tok-123"))))).toBe(false);
+    expect(passed(proxy(req("/agents", bearer("tok-123"))))).toBe(false);
+    expect(passed(proxy(req("/api/needs-you/x", bearer("tok-123"))))).toBe(
+      false,
+    );
+  });
+
+  it("does nothing when the token isn't configured", () => {
+    gate("proxy");
+    expect(passed(proxy(req("/api/needs-you", bearer("x"))))).toBe(false);
+    expect(passed(proxy(req("/api/needs-you", bearer("undefined"))))).toBe(
+      false,
+    );
+  });
+
+  it("still lets the owner in", () => {
+    gate("proxy");
+    vi.stubEnv("NEEDS_YOU_READ_TOKEN", "tok-123");
+    expect(passed(proxy(req("/api/needs-you", owner)))).toBe(true);
+  });
+});
+
 describe("setup gate (#73)", () => {
   afterEach(() => {
     setup.open = false;

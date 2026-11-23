@@ -1,5 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { ownerFrom, readsNeedSignIn, SESSION_COOKIE } from "./lib/auth";
+import {
+  NEEDS_YOU_PATH,
+  needsYouBearer,
+  ownerFrom,
+  readsNeedSignIn,
+  SESSION_COOKIE,
+} from "./lib/auth";
 import { setupOpen } from "./lib/setup";
 
 // REQUIRE_SIGN_IN_FOR_READS (#115): one gate in front of every page and API
@@ -31,6 +37,13 @@ export function proxy(request: NextRequest) {
   if (!readsNeedSignIn()) return NextResponse.next();
   const { pathname, search } = request.nextUrl;
   if (PUBLIC.test(pathname)) return NextResponse.next();
+  // The Needs-you read token (#193) opens this one route and nothing else.
+  if (
+    pathname === NEEDS_YOU_PATH &&
+    needsYouBearer(request.headers.get("authorization")) === "valid"
+  ) {
+    return NextResponse.next();
+  }
   const owner = ownerFrom(request.cookies.get(SESSION_COOKIE)?.value, (name) =>
     request.headers.get(name),
   );

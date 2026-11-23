@@ -309,6 +309,26 @@ export async function getOwner(): Promise<Owner | null> {
 export const readsNeedSignIn = (env: Env = process.env) =>
   /^(1|true|yes)$/i.test(env.REQUIRE_SIGN_IN_FOR_READS ?? "");
 
+/** The one route NEEDS_YOU_READ_TOKEN opens (#193). */
+export const NEEDS_YOU_PATH = "/api/needs-you";
+
+/**
+ * A "Authorization: Bearer <token>" header against NEEDS_YOU_READ_TOKEN:
+ * "valid", "invalid" (a bearer that isn't the token), or "none" (no header, or
+ * the token isn't configured). Constant time: both sides are hashed first, so
+ * neither the length nor the content leaks through timing.
+ */
+export function needsYouBearer(
+  authorization: string | null,
+  env: Env = process.env,
+): "valid" | "invalid" | "none" {
+  const want = env.NEEDS_YOU_READ_TOKEN;
+  if (!want || !authorization) return "none";
+  const given = /^Bearer (.+)$/i.exec(authorization)?.[1] ?? "";
+  const h = (s: string) => createHash("sha256").update(s).digest();
+  return timingSafeEqual(h(given), h(want)) ? "valid" : "invalid";
+}
+
 /** For write handlers: the owner, or throws OwnerRequired (send a 403). */
 export async function requireOwner(): Promise<Owner> {
   const owner = await getOwner();

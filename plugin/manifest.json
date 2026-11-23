@@ -1,0 +1,24 @@
+{
+  "id": "buzz-dashboard.needs-you",
+  "name": "Needs you",
+  "apiVersion": 1,
+  "description": "What needs you in your hive: PRs to merge, blocked work, releases and red CI, read from your buzz-dashboard.",
+  "discovery": {
+    "category": "operations",
+    "tags": ["buzz-dashboard", "hive", "ci", "releases"]
+  },
+  "updates": { "defaultEnabled": true },
+  "host": {
+    "commands": [
+      {
+        "id": "read",
+        "program": "buzz-dashboard-needs-you-read",
+        "maxOutputBytes": 262144,
+        "artifact": {
+          "path": "~/.buzz/bin/buzz-dashboard-needs-you-read",
+          "sha256": "630684f7221fc35bbd794118a719f4d5acd5b1840cdab2a018cd9b3b9c52dcf2"
+        }
+      }
+    ]
+  }
+}
