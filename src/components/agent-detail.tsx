@@ -14,7 +14,10 @@ import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { AgentMessages } from "@/components/agent-messages";
 import { EditProfile } from "@/components/agent-profile";
-import { AgentSettings } from "@/components/agent-settings";
+import {
+  AgentSettings,
+  type RelayConfigTarget,
+} from "@/components/agent-settings";
 import {
   Avatar,
   type FeedInfo,
@@ -64,6 +67,7 @@ export function AgentDetail({
   activity,
   owners,
   admin = false,
+  configTarget = null,
   turns,
   prs,
   buzzUrl,
@@ -80,6 +84,8 @@ export function AgentDetail({
   owners: string[];
   /** Signed in as the owner (the first admin): shows Agent settings and Edit profile. */
   admin?: boolean;
+  /** Where the owner's browser reads the relay config; null when it can't. */
+  configTarget?: RelayConfigTarget | null;
   /** Turns and errors per day for 30 days, or null without a source. */
   turns: { turns: number[]; errors: number[] } | null;
   /** The agent's PRs from GitHub, newest first, or null when it isn't read. */
@@ -257,10 +263,11 @@ export function AgentDetail({
           {admin && (
             <AgentSettings
               name={a.name}
+              target={configTarget}
               className="order-2 xl:order-none"
               data={{
                 model: runtime?.model ?? null,
-                // ponytail: no feed field for effort; the relay config reader adds it.
+                // No feed field for effort; the relay config read fills it.
                 effort: null,
                 source: feed
                   ? `From the status feed · as of ${ago(now - feed.publishedAt)}`

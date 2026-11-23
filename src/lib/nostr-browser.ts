@@ -93,6 +93,29 @@ export async function relayWrite(
   }
 }
 
+/**
+ * One owner-signed agent config read (#194): signs the relay's HTTP auth for
+ * `[filter]` and has the dashboard pass both to `<relay>/<path>` unchanged.
+ */
+export async function configRead(
+  n: Nip07,
+  relay: string,
+  path: "query" | "count",
+  filter: Record<string, unknown>,
+): Promise<unknown> {
+  const body = JSON.stringify([filter]);
+  const authorization = await httpAuth(n, `${relay}/${path}`, body);
+  const res = await fetch("/api/agent-config", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, body, authorization }),
+  });
+  if (!res.ok) {
+    throw new SignError(await errorOf(res, "The relay didn't answer."));
+  }
+  return res.json();
+}
+
 /** A signed registry write (#166): a NIP-98 event for this URL and body. */
 export async function registryWrite(
   n: Nip07,

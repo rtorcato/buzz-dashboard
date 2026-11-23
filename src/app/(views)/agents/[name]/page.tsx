@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AgentDetail, type AgentPr } from "@/components/agent-detail";
+import type { RelayConfigTarget } from "@/components/agent-settings";
+import { relaySelf } from "@/lib/agent-config-proxy";
 import { byDay, findAgent, runtimeFor } from "@/lib/agents";
 import { getOwner } from "@/lib/auth";
-import { buzzWebUrl } from "@/lib/env";
+import { relayHttpBase } from "@/lib/buzz-dm";
+import { buzzWebUrl, readServerEnv } from "@/lib/env";
 import { envList, loadGitHub } from "@/lib/github";
 import { SLOT_S, SOURCE_KINDS } from "@/lib/health";
 import { healthSource } from "@/lib/health-data";
@@ -59,6 +62,9 @@ export default async function AgentPage({ params }: Props) {
           return null;
         })
     : null;
+  // The owner's browser reads the agent's relay config (#194). It needs the
+  // relay's origin and own key; neither is a secret.
+  const target = owner ? await configTarget(agent.pubkeys[0]) : null;
   // The same @Name attribution as Pipeline, newest first.
   const prs: AgentPr[] = (github?.prs ?? [])
     .filter((p) => p.isPr && p.agent === agent.name)
@@ -91,9 +97,21 @@ export default async function AgentPage({ params }: Props) {
       // Agent settings are admins-only; the owner is the first admin until
       // roles land (DESIGN.md → Sign-in and roles).
       admin={owner !== null}
+      configTarget={target}
       turns={turns}
       prs={github ? prs : null}
       buzzUrl={buzzWebUrl()}
     />
   );
+}
+
+async function configTarget(agent: string): Promise<RelayConfigTarget | null> {
+  let relay: string | null = null;
+  try {
+    relay = relayHttpBase(readServerEnv().buzzRelayUrl);
+  } catch {
+    relay = null;
+  }
+  const self = relay && (await relaySelf(relay));
+  return relay && self && agent ? { relay, relaySelf: self, agent } : null;
 }
