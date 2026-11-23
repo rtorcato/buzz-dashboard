@@ -13,6 +13,7 @@ import {
   pruneEdits,
   refusalOf,
   refusalText,
+  revertInstructionsContent,
   revertSettingsContent,
   revisionTemplate,
   SETTINGS_TYPE,
@@ -288,5 +289,53 @@ describe("revertSettingsContent", () => {
       "prev",
       "f".repeat(64),
     ]);
+  });
+  it("keeps the head's plugin notes, like Desktop's revertTemplate", async () => {
+    const old = await head(SETTINGS_TYPE, {
+      ...SETTINGS,
+      settings: { model: "sonnet" },
+      pluginNotes: { "plugin.a": { data: 0, tag: "old" } },
+    });
+    const current = await head(SETTINGS_TYPE, SETTINGS);
+    const r = revertSettingsContent(old, current) as { content: string };
+    const body = JSON.parse(r.content);
+    expect(body.settings).toEqual({ model: "sonnet" });
+    expect(body.pluginNotes).toEqual(SETTINGS.pluginNotes);
+    expect(body.futureField).toEqual({ keep: true });
+  });
+  it("keeps the target's notes over a deleted head", async () => {
+    const old = await head(SETTINGS_TYPE, SETTINGS);
+    const gone = await head(SETTINGS_TYPE, null, { op: "delete" });
+    expect(revertSettingsContent(old, gone)).toEqual({ content: old.content });
+  });
+  it("refuses a deleted revision", async () => {
+    const gone = await head(SETTINGS_TYPE, null, { op: "delete" });
+    expect(revertSettingsContent(gone)).toHaveProperty("problem");
+  });
+  it("over a deleted head, the template is a restore", async () => {
+    const old = await head(SETTINGS_TYPE, SETTINGS);
+    const gone = await head(SETTINGS_TYPE, null, { op: "delete" });
+    const r = revertSettingsContent(old, gone) as { content: string };
+    const t = revisionTemplate(gone, r.content, { now: 1 });
+    expect(t.tags.find((x) => x[0] === "op")).toEqual(["op", "restore"]);
+  });
+});
+
+describe("revertInstructionsContent", () => {
+  it("brings back the old text as it was", async () => {
+    const old = await head(INSTRUCTIONS_TYPE, { version: 1, text: "Be kind." });
+    expect(revertInstructionsContent(old)).toEqual({ content: old.content });
+  });
+  it("refuses a deleted or unreadable revision", async () => {
+    const gone = await head(INSTRUCTIONS_TYPE, null, { op: "delete" });
+    expect(revertInstructionsContent(gone)).toHaveProperty("problem");
+    const bad = {
+      ...gone,
+      tags: gone.tags.map((t) => (t[0] === "op" ? ["op", "update"] : t)),
+      content: "{",
+    };
+    expect(revertInstructionsContent(bad)).toHaveProperty("problem");
+    const noText = { ...bad, content: JSON.stringify({ version: 1 }) };
+    expect(revertInstructionsContent(noText)).toHaveProperty("problem");
   });
 });

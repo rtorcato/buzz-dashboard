@@ -19,6 +19,7 @@ import {
   type RelayConfigTarget,
   UnsavedBar,
 } from "@/components/agent-config-edit";
+import { AgentConfigHistory } from "@/components/agent-config-history";
 import { AgentMessages } from "@/components/agent-messages";
 import { EditProfile } from "@/components/agent-profile";
 import { AgentSettings } from "@/components/agent-settings";
@@ -183,6 +184,7 @@ export function AgentDetail({
                 )}
                 {prsUrl && <OutLink href={prsUrl}>PRs</OutLink>}
                 {admin && <EditProfile agent={a} />}
+                {admin && <AgentConfigHistory />}
                 {admin && <AgentConfigButtons />}
               </div>
             )}

@@ -86,6 +86,16 @@ The owner can change a goose agent's model, effort, session scope and instructio
 - Model and Effort only offer values this hive already runs, plus the runtime default. goose takes the model IDs and thinking levels its provider offers, and a value it doesn't offer would fail the agent's next turn. Change to anything else in Buzz Desktop.
 - The agent uses the new revision from its next turn. There is no restart. After a save, "Revert to N" publishes the previous revision again as a new one. History is never rewritten. A revert brings back the old settings as they were, so it skips the Model and Effort lists. It still passes the schema check, but if the old model is one goose no longer offers, change it in Buzz Desktop.
 
+## Config history is read with your sign-in
+
+History on the agent page lists every revision of the agent's settings and instructions, newest first. A settings and an instructions revision saved together show as one row, with the change note, who signed it and a diff against the revision before.
+
+- Your extension signs each read, like the reads above. The browser asks the relay's `/count` for how many revisions there are, then `/query` with `artifact: history`, 100 revisions at a time, with "Load older" for the rest. The dashboard server never sees them.
+- Only the owner sees History. Other admins and viewers can't read the config channel, so the button is hidden for them.
+- "Revert to this" opens Review and save with the config as it stood right after that row. Save publishes it as a new revision with the current one as its `prev`: an `update`, or a `restore` when the current one was deleted in Buzz Desktop. Nothing is deleted and History is never rewritten.
+- A revert keeps the current plugin notes, as Buzz Desktop does, because they're a plugin's memory of the agent, not a setting. Everything else comes back as it was, and it still passes the schema check before it's signed.
+- If the revision a row needs for one part isn't loaded yet, the revert leaves that part as it is and says so. Load older revisions first to bring it back too.
+
 ## Secrets stay on the server
 
 Every variable is read on the server. Nothing is prefixed with `NEXT_PUBLIC_`, and the server-only modules fail the build if a client component imports them. The browser only receives rendered pages and public media URLs.
