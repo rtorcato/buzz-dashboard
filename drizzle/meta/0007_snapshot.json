@@ -1,5 +1,5 @@
 {
-  "id": "7489b15b-8fda-4a0b-a21f-dc094857966e",
+  "id": "2a9cf131-3aa6-45bb-baae-2a4f16f42db1",
   "prevId": "c0afa625-ee66-4bcd-9a6a-6d107bba9d3a",
   "version": "7",
   "dialect": "postgresql",
@@ -517,6 +517,28 @@
           "columns": [
             {
               "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"events\".\"source\" = 'ingest'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_ingest_platform_at_idx": {
+          "name": "events_ingest_platform_at_idx",
+          "columns": [
+            {
+              "expression": "platform",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

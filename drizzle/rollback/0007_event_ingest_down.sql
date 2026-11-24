@@ -14,7 +14,7 @@
 
 BEGIN;
 DROP TABLE IF EXISTS ingest_tokens;
-DROP INDEX IF EXISTS events_ingest_kind_at_idx, events_ingest_agent_at_idx;
+DROP INDEX IF EXISTS events_ingest_kind_at_idx, events_ingest_platform_at_idx, events_ingest_agent_at_idx;
 ALTER TABLE events DROP CONSTRAINT IF EXISTS events_ingest_ck;
 DELETE FROM events WHERE source = 'ingest';   -- their identity lives in the columns below
 ALTER TABLE events DROP COLUMN IF EXISTS agent_id, DROP COLUMN IF EXISTS platform;

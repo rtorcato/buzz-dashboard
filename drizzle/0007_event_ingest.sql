@@ -15,6 +15,7 @@ ALTER TABLE "events" ADD COLUMN "platform" text;--> statement-breakpoint
 ALTER TABLE "events" ADD COLUMN "agent_id" text;--> statement-breakpoint
 CREATE UNIQUE INDEX "ingest_tokens_hash_uq" ON "ingest_tokens" USING btree ("hash");--> statement-breakpoint
 CREATE INDEX "events_ingest_kind_at_idx" ON "events" USING btree ("kind","at" DESC NULLS LAST) WHERE "events"."source" = 'ingest';--> statement-breakpoint
+CREATE INDEX "events_ingest_platform_at_idx" ON "events" USING btree ("platform","at" DESC NULLS LAST) WHERE "events"."source" = 'ingest';--> statement-breakpoint
 CREATE INDEX "events_ingest_agent_at_idx" ON "events" USING btree ("platform","agent_id","at" DESC NULLS LAST) WHERE "events"."source" = 'ingest';--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_ingest_ck" CHECK ("events"."source" <> 'ingest' OR (
         "events"."platform" IS NOT NULL AND "events"."agent_id" IS NOT NULL

@@ -92,6 +92,10 @@ export const events = pgTable(
     index("events_ingest_kind_at_idx")
       .on(t.kind, t.at.desc().nullsLast())
       .where(sql`${t.source} = 'ingest'`),
+    // Devastator's addendum on #199: "Last event" per platform is one probe.
+    index("events_ingest_platform_at_idx")
+      .on(t.platform, t.at.desc().nullsLast())
+      .where(sql`${t.source} = 'ingest'`),
     index("events_ingest_agent_at_idx")
       .on(t.platform, t.agentId, t.at.desc().nullsLast())
       .where(sql`${t.source} = 'ingest'`),

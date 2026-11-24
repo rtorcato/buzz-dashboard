@@ -19,6 +19,22 @@ let failInsert = false;
 // Just enough of drizzle's builder for ingest-tokens.ts. Tests use one
 // platform at a time, so delete and update apply to every token row.
 const fakeDb = {
+  // listPlatformTokens' lateral query: newest stored `at` per platform.
+  execute: async () => ({
+    rows: tokens.map((t) => {
+      const ats = [...stored.values()]
+        .filter((e) => e.platform === t.platform)
+        .map((e) => e.at as Date)
+        .sort((a, b) => b.getTime() - a.getTime());
+      return {
+        platform: t.platform,
+        last4: t.last4,
+        link_hosts: t.linkHosts,
+        created_at: t.createdAt,
+        last_event_at: ats[0] ?? null,
+      };
+    }),
+  }),
   select: () => ({
     from: () => ({
       where: () => {
@@ -82,9 +98,12 @@ vi.mock("./registry-route", () => ({
 const { receiveEvent, limiter, RATE_LIMIT } = await import(
   "./event-ingest-receive"
 );
-const { rotatePlatformToken, revokePlatformToken, setLinkHosts } = await import(
-  "./ingest-tokens"
-);
+const {
+  listPlatformTokens,
+  rotatePlatformToken,
+  revokePlatformToken,
+  setLinkHosts,
+} = await import("./ingest-tokens");
 
 const HIVE = "wss://relay.example/";
 const body = {
@@ -217,5 +236,19 @@ describe("rate limit", () => {
       await post("hive_evt_wrong");
     }
     expect((await post(token)).status).toBe(201);
+  });
+});
+
+describe("token list", () => {
+  it("shows a masked token and the newest event, kept across a rotation", async () => {
+    let [row] = await listPlatformTokens(HIVE);
+    expect(row).toMatchObject({ platform: "claude-code", lastEventAt: null });
+    expect(row.masked).toMatch(/^hive_evt_•{14}.{4}$/);
+    expect(row.masked).not.toContain(token.slice(9, -4));
+    await post(token);
+    await rotatePlatformToken(HIVE, "claude-code", []);
+    [row] = await listPlatformTokens(HIVE);
+    expect(row.lastEventAt).not.toBeNull();
+    expect(row.linkHosts).toEqual(["github.com"]);
   });
 });

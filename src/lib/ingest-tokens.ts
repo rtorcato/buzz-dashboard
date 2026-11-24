@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { TokenMatch } from "./event-ingest";
 import { historyDb } from "./history";
 import { events, ingestTokens, type NewHistoryEvent } from "./history-schema";
@@ -21,15 +21,25 @@ export type PlatformToken = {
   masked: string;
   linkHosts: string[];
   createdAt: string;
+  /**
+   * The platform's newest ingested event, across rotations; null for "No
+   * events yet". Only the list reads it; a rotate or link edit returns null.
+   */
+  lastEventAt: string | null;
 };
 
 const toPlatformToken = (
-  r: typeof ingestTokens.$inferSelect,
+  r: Pick<
+    typeof ingestTokens.$inferSelect,
+    "platform" | "last4" | "linkHosts" | "createdAt"
+  >,
+  lastEventAt: Date | null = null,
 ): PlatformToken => ({
   platform: r.platform,
   masked: maskToken(r, EVENT_TOKEN_PREFIX),
   linkHosts: r.linkHosts,
   createdAt: r.createdAt.toISOString(),
+  lastEventAt: lastEventAt?.toISOString() ?? null,
 });
 
 // Every post checks its token. Like the OTLP receivers (#66), the hive's whole
@@ -88,16 +98,47 @@ export async function matchEventToken(
   return (await tokensByHash(hive, now)).get(sha256(token)) ?? null;
 }
 
-/** The hive's platform tokens, A to Z. */
+type ListRow = {
+  platform: string;
+  last4: string;
+  link_hosts: string[];
+  created_at: Date | string;
+  last_event_at: Date | string | null;
+};
+
+const asDate = (v: Date | string) => (v instanceof Date ? v : new Date(v));
+
+/**
+ * The hive's platform tokens, A to Z, each with its "Last event". Devastator's
+ * query shape on #199: one probe of events_ingest_platform_at_idx per token
+ * row, which the partial index serves only with `source = 'ingest'` written
+ * out.
+ */
 export async function listPlatformTokens(
   hive: string,
 ): Promise<PlatformToken[]> {
-  const rows = await historyDb()
-    .select()
-    .from(ingestTokens)
-    .where(eq(ingestTokens.hive, hive))
-    .orderBy(ingestTokens.platform);
-  return rows.map(toPlatformToken);
+  const { rows } = await historyDb().execute<ListRow>(sql`
+    SELECT t.platform, t.last4, t.link_hosts, t.created_at, le.at AS last_event_at
+    FROM ${ingestTokens} t
+    LEFT JOIN LATERAL (
+      SELECT e.at FROM ${events} e
+      WHERE e.source = 'ingest' AND e.platform = t.platform AND e.hive = t.hive
+      ORDER BY e.at DESC NULLS LAST
+      LIMIT 1
+    ) le ON true
+    WHERE t.hive = ${hive}
+    ORDER BY t.platform`);
+  return rows.map((r) =>
+    toPlatformToken(
+      {
+        platform: r.platform,
+        last4: r.last4,
+        linkHosts: r.link_hosts,
+        createdAt: asDate(r.created_at),
+      },
+      r.last_event_at === null ? null : asDate(r.last_event_at),
+    ),
+  );
 }
 
 /**
