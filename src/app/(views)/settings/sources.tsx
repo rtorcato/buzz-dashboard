@@ -16,6 +16,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CostSourcePicker } from "@/components/cost-source-picker";
+import { EventIngestCard } from "@/components/event-ingest-card";
 import { OtelSetup } from "@/components/otel-setup";
 import { SignInButton } from "@/components/sign-in";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -25,11 +26,14 @@ import { type AuthMode, authMode, getOwner, type Owner } from "@/lib/auth";
 import { COST_DOCS, formatTokens } from "@/lib/cost";
 import { ingestTokenRecord, signerRecord } from "@/lib/cost-source";
 import { readServerEnv } from "@/lib/env";
+import { defaultLinkHosts } from "@/lib/event-ingest";
 import { envList } from "@/lib/github";
 import { costReporters, historyEnabled, historyStats } from "@/lib/history";
 import type { Agent } from "@/lib/hive";
 import { maskToken } from "@/lib/ingest-token";
+import { listPlatformTokens } from "@/lib/ingest-tokens";
 import { npubEncode } from "@/lib/npub";
+import { hiveOf } from "@/lib/projects";
 
 // DESIGN.md → Settings → Sources (#42, #43). Where the numbers come from, and the
 // one place the cost source is connected. Signed out it is read-only.
@@ -76,14 +80,14 @@ async function githubLine(token: string | undefined) {
   }
 }
 
-/** The OTLP endpoint agents post to, from the address this page was opened at. */
-async function endpoint() {
+/** The address this page was opened at, for the endpoints agents post to. */
+async function origin() {
   const h = await headers();
   const proto = (h.get("x-forwarded-proto") ?? "https").split(",")[0].trim();
   const at = (h.get("x-forwarded-host") ?? h.get("host") ?? "")
     .split(",")[0]
     .trim();
-  return `${proto}://${at}/otlp`;
+  return `${proto}://${at}`;
 }
 
 export async function SourcesTab({
@@ -104,7 +108,9 @@ export async function SourcesTab({
   } catch {
     env = null;
   }
-  const [owner, record, signer, stats, reporters, github, url] =
+  // #199: platform tokens are hive-scoped, so they need the relay too.
+  const hive = history ? hiveOf(env?.buzzRelayUrl) : null;
+  const [owner, record, signer, stats, reporters, github, base, platforms] =
     await Promise.all([
       getOwner(),
       ingestTokenRecord().catch(() => null),
@@ -114,8 +120,10 @@ export async function SourcesTab({
         ? costReporters(new Date(now - 7 * 86_400_000), today).catch(() => [])
         : [],
       env?.githubToken ? githubLine(env.githubToken) : null,
-      endpoint(),
+      origin(),
+      hive ? listPlatformTokens(hive).catch(() => null) : null,
     ]);
+  const url = `${base}/otlp`;
   const canEdit = owner !== null && history;
 
   let dashboardKey: string | null = null;
@@ -295,6 +303,18 @@ export async function SourcesTab({
           GitHub.
         </p>
       </Card>
+
+      {hive && platforms && (
+        <Card className="gap-0 px-4 sm:px-6">
+          <EventIngestCard
+            endpoint={`${base}/api/events`}
+            platforms={platforms}
+            defaultHosts={defaultLinkHosts(env?.buzzRelayUrl)}
+            canEdit={canEdit}
+            now={now}
+          />
+        </Card>
+      )}
     </div>
   );
 }

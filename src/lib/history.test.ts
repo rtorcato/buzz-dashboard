@@ -11,7 +11,7 @@ const render = (
 describe("hiveStatements (#116)", () => {
   it("defaults and backfills every history table with the relay", () => {
     const sql = hiveStatements("wss://relay.example");
-    expect(sql).toHaveLength(20);
+    expect(sql).toHaveLength(22);
     expect(sql[0]).toBe(
       `ALTER TABLE "events" ALTER COLUMN "hive" SET DEFAULT 'wss://relay.example/'`,
     );

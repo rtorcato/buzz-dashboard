@@ -63,11 +63,13 @@ describe("proxy", () => {
       "/api/auth/challenge",
       "/api/health",
       "/otlp/v1/logs",
+      "/api/events",
     ]) {
       expect(passed(proxy(req(p))), p).toBe(true);
     }
     expect(passed(proxy(req("/sign-in-x")))).toBe(false);
     expect(passed(proxy(req("/api/healthz")))).toBe(false);
+    expect(passed(proxy(req("/api/events/x")))).toBe(false);
   });
 
   it("lets the owner in through the proxy", () => {

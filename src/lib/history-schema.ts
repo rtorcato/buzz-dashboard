@@ -26,7 +26,7 @@ const hive = () => text("hive");
 export const events = pgTable(
   "events",
   {
-    /** "github" or "buzz". */
+    /** How the row arrived: "github", "buzz", or "ingest" (#199). */
     source: text("source").notNull(),
     /** Unique per source: a Nostr event id, or "owner/repo#12:merged". */
     sourceId: text("source_id").notNull(),
@@ -50,6 +50,14 @@ export const events = pgTable(
       .defaultNow()
       .notNull(),
     hive: hive(),
+    /**
+     * #199: the platform an ingested event came from ("buzz", "claude-code",
+     * "github-actions"), stamped from the posting token. Null on github and
+     * buzz rows.
+     */
+    platform: text("platform"),
+    /** #199: the agent's id on that platform; (platform, agent_id) is its identity. */
+    agentId: text("agent_id"),
   },
   // The primary key makes ingest idempotent: a re-read inserts nothing new.
   (t) => [
@@ -62,10 +70,75 @@ export const events = pgTable(
     index("events_channel_at_idx")
       .on(t.channel, t.at.desc())
       .where(sql`${t.channel} IS NOT NULL`),
+    // #199, to Devastator's schema v2: ingested rows are checked for format
+    // and length, never against a list, so a new kind or platform needs no
+    // migration. Other sources are untouched. The IS NOT NULLs matter:
+    // `NULL ~ '...'` is NULL, and a CHECK lets NULL through.
+    check(
+      "events_ingest_ck",
+      sql`${t.source} <> 'ingest' OR (
+        ${t.platform} IS NOT NULL AND ${t.agentId} IS NOT NULL
+        AND ${t.platform} ~ '^[a-z0-9][a-z0-9-]{0,31}$'
+        AND ${t.agentId} ~ '^[[:graph:]]{1,128}$'
+        AND ${t.kind} ~ '^[a-z][a-z0-9_]{0,47}$'
+        AND starts_with(${t.sourceId}, ${t.platform} || ':') AND char_length(${t.sourceId}) <= 161
+        AND ${t.actor} IS NOT NULL AND char_length(${t.actor}) BETWEEN 1 AND 64
+        AND ${t.title} IS NOT NULL AND char_length(${t.title}) BETWEEN 1 AND 200
+        AND (${t.body} IS NULL OR char_length(${t.body}) <= 4000)
+        AND (${t.url} IS NULL OR (${t.url} ~ '^https://' AND char_length(${t.url}) <= 2048))
+        AND (${t.repo} IS NULL OR (${t.repo} = lower(${t.repo}) AND ${t.repo} ~ '^[a-z0-9._-]+/[a-z0-9._-]+$'))
+      )`,
+    ),
+    index("events_ingest_kind_at_idx")
+      .on(t.kind, t.at.desc().nullsLast())
+      .where(sql`${t.source} = 'ingest'`),
+    // Devastator's addendum on #199: "Last event" per platform is one probe.
+    index("events_ingest_platform_at_idx")
+      .on(t.platform, t.at.desc().nullsLast())
+      .where(sql`${t.source} = 'ingest'`),
+    index("events_ingest_agent_at_idx")
+      .on(t.platform, t.agentId, t.at.desc().nullsLast())
+      .where(sql`${t.source} = 'ingest'`),
   ],
 );
 
 export type HistoryEvent = typeof events.$inferSelect;
+
+// #199: one ingest token per platform, so each can be rotated or revoked
+// alone. Only the sha256 of the token is stored; the server finds the
+// platform from the hash, never from the request body.
+export const ingestTokens = pgTable(
+  "ingest_tokens",
+  {
+    hive: text("hive").notNull(),
+    platform: text("platform").notNull(),
+    hash: text("hash").notNull(),
+    last4: text("last4").notNull(),
+    /** Exact lowercase hostnames an event's link may point at. */
+    linkHosts: text("link_hosts").array().notNull().default(sql`'{}'`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    primaryKey({
+      name: "ingest_tokens_hive_platform_pk",
+      columns: [t.hive, t.platform],
+    }),
+    uniqueIndex("ingest_tokens_hash_uq").on(t.hash),
+    check(
+      "ingest_tokens_platform_ck",
+      sql`${t.platform} ~ '^[a-z0-9][a-z0-9-]{0,31}$'`,
+    ),
+    check("ingest_tokens_hash_ck", sql`${t.hash} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "ingest_tokens_link_hosts_ck",
+      sql`cardinality(${t.linkHosts}) <= 32`,
+    ),
+  ],
+);
+
+export type IngestTokenRow = typeof ingestTokens.$inferSelect;
 export type NewHistoryEvent = typeof events.$inferInsert;
 
 // Cost reports from Claude Code OpenTelemetry (#42): one row per delta data

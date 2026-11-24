@@ -192,9 +192,10 @@ export function TimelineFilters({
             label="Source"
             icon={Layers2}
             items={[
-              { value: ALL, label: "GitHub + Buzz" },
+              { value: ALL, label: "All sources" },
               { value: "github", label: "GitHub" },
               { value: "buzz", label: "Buzz" },
+              { value: "ingest", label: "Agent events" },
             ]}
             value={filters.source ?? ALL}
             onChange={(v) => set("source", v)}
