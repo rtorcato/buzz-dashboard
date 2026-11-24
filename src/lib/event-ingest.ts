@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { NewHistoryEvent } from "./history-schema";
 
-// Event ingest (#199), the pure parts, so they test without a database.
+// Event ingest (#199), the pure parts, so they test without a database and
+// the Settings card can share the same rules in the browser.
 // Agents and watchers on any platform POST events to /api/events with their
 // platform's bearer token. The row lands in `events` with source "ingest", to
 // Devastator's schema v2 on the issue; these rules mirror its check
@@ -123,7 +123,7 @@ export function buildIngestRow(
     ok: true,
     row: {
       source: "ingest",
-      sourceId: `${token.platform}:${b.id ?? (opts.uuid ?? randomUUID)()}`,
+      sourceId: `${token.platform}:${b.id ?? (opts.uuid ?? (() => crypto.randomUUID()))()}`,
       platform: token.platform,
       agentId: b.agentId,
       actor: b.agent,
@@ -148,6 +148,22 @@ export function defaultLinkHosts(relayUrl: string | undefined): string[] {
     // No relay configured: GitHub only.
   }
   return hosts;
+}
+
+/** Why `raw` isn't a host, or null when it is one. */
+export function hostError(raw: string): string | null {
+  const v = raw.trim().toLowerCase();
+  if (!v) return null;
+  if (v.includes("://") || v.includes("/")) {
+    let host = "docs.example.org";
+    try {
+      host = new URL(v.includes("://") ? v : `https://${v}`).hostname || host;
+    } catch {}
+    return `That’s a URL. Enter just the host, like ${host}.`;
+  }
+  return HOST_RE.test(v)
+    ? null
+    : "Not a hostname. Use letters, digits, dots and dashes.";
 }
 
 /** The owner's link host list: lowercase, deduplicated, each a valid host. */

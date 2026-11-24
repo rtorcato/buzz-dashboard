@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildIngestRow,
   defaultLinkHosts,
+  hostError,
   LinkHostsSchema,
   linkAllowed,
   RotateBodySchema,
@@ -152,5 +153,22 @@ describe("link hosts", () => {
         false,
       );
     }
+  });
+});
+
+describe("hostError", () => {
+  it("passes a host and an empty draft", () => {
+    expect(hostError("docs.example.org")).toBeNull();
+    expect(hostError("  ")).toBeNull();
+  });
+  it("catches a pasted URL and names its host", () => {
+    expect(hostError("https://docs.example.org/a")).toBe(
+      "That’s a URL. Enter just the host, like docs.example.org.",
+    );
+    expect(hostError("gitlab.com/o/r")).toMatch(/like gitlab\.com\.$/);
+  });
+  it("refuses anything else that isn't a hostname", () => {
+    expect(hostError("*.example.org")).toMatch(/^Not a hostname/);
+    expect(hostError("has space.com")).toMatch(/^Not a hostname/);
   });
 });
