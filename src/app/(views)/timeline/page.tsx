@@ -11,6 +11,7 @@ import {
   type LucideIcon,
   MessageSquare,
   OctagonAlert,
+  Radio,
   Tag,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -108,9 +109,16 @@ function Highlight({ text, q }: { text: string; q: string }) {
 }
 
 // DESIGN.md → Timeline → Source badge. The label carries the meaning.
-function SourceBadge({ source }: { source: Row["source"] }) {
+// #199: an ingested event shows its platform, in the GitHub badge's style.
+function SourceBadge({
+  source,
+  platform,
+}: {
+  source: Row["source"];
+  platform?: string;
+}) {
   const buzz = source === "buzz";
-  const Icon = buzz ? Hexagon : GitBranch;
+  const Icon = buzz ? Hexagon : source === "ingest" ? Radio : GitBranch;
   return (
     <span
       className={cn(
@@ -119,7 +127,11 @@ function SourceBadge({ source }: { source: Row["source"] }) {
       )}
     >
       <Icon className="size-3" aria-hidden />
-      {buzz ? "Buzz" : "GitHub"}
+      {buzz
+        ? "Buzz"
+        : source === "ingest"
+          ? (platform ?? "Agent event")
+          : "GitHub"}
     </span>
   );
 }
@@ -134,7 +146,12 @@ function FeedRow({
   needsYou: Set<string>;
 }) {
   const Icon = ICONS[row.icon];
-  const where = row.source === "buzz" ? "in Buzz" : "on GitHub";
+  const where =
+    row.source === "buzz"
+      ? "in Buzz"
+      : row.source === "ingest"
+        ? `from ${row.platform ?? "an agent"}`
+        : "on GitHub";
   // DESIGN.md → Timeline: a row that needs the owner gets a 5% tint and a badge.
   const flagged = row.ref !== undefined && needsYou.has(row.ref);
   return (
@@ -152,7 +169,7 @@ function FeedRow({
       </span>
       <div className="min-w-0 space-y-1.5">
         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <SourceBadge source={row.source} />
+          <SourceBadge source={row.source} platform={row.platform} />
           <Avatar className="size-5">
             <AvatarFallback className="text-[10px] font-medium">
               {initials(row.actor)}
@@ -338,7 +355,11 @@ export default async function TimelinePage({
   const query: EventQuery = {
     since: new Date(days[0] * 1000),
     source: filters.source ?? undefined,
-    kinds: filters.type ? [...TYPES[filters.type].kinds] : undefined,
+    kinds: filters.kind
+      ? [filters.kind]
+      : filters.type
+        ? [...TYPES[filters.type].kinds]
+        : undefined,
     repo: filters.repo ?? undefined,
     actors: actors ?? undefined,
     // The project's repos and channels, through the indexes (#166).

@@ -309,8 +309,8 @@ and the cost source. Set `AUTH_MODE` to turn it on:
 
 Set `REQUIRE_SIGN_IN_FOR_READS=1` to put every page and API read behind the
 same sign-in, for a dashboard reachable from outside your network. Signed out,
-pages go to `/sign-in` and the API answers 401; `/api/health` and OTLP ingest
-stay open. It fails closed: with the flag on and `AUTH_MODE` unset, nobody gets in.
+pages go to `/sign-in` and the API answers 401; `/api/health`, OTLP ingest
+and event ingest (`/api/events`, which has its own tokens) stay open. It fails closed: with the flag on and `AUTH_MODE` unset, nobody gets in.
 
 Unset, sign-in is off and those controls stay read-only. See
 [Owner sign-in](https://docs.torcato.dev/buzz-dashboard/docs/owner-sign-in).

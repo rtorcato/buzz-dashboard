@@ -1,3 +1,4 @@
+import { KIND_RE } from "./event-ingest";
 import type { HistoryEvent, NewHistoryEvent } from "./history-schema";
 import type { FeedItem } from "./hive";
 
@@ -26,12 +27,17 @@ export const RANGES = {
 export type Range = keyof typeof RANGES;
 export const DEFAULT_RANGE: Range = "14d";
 
+export type Source = "github" | "buzz" | "ingest";
+
 export type Filters = {
   q: string;
   repo: string | null;
   agent: string | null;
-  source: "github" | "buzz" | null;
+  /** "ingest": events agents posted to /api/events (#199). */
+  source: Source | null;
   type: EventType | null;
+  /** #199: one event kind, e.g. "failed_turn"; an open set, so a URL param. */
+  kind: string | null;
   range: Range;
 };
 
@@ -49,8 +55,9 @@ export function parseFilters(
     q: str(p.q)?.trim() ?? "",
     repo: str(p.repo),
     agent: str(p.agent),
-    source: pick(p.source, ["github", "buzz"]),
+    source: pick(p.source, ["github", "buzz", "ingest"]),
     type: pick(p.type, Object.keys(TYPES) as EventType[]),
+    kind: typeof p.kind === "string" && KIND_RE.test(p.kind) ? p.kind : null,
     range: pick(p.range, Object.keys(RANGES) as Range[]) ?? DEFAULT_RANGE,
   };
 }
@@ -67,7 +74,9 @@ export type Row = {
   id: string;
   /** Unix seconds. */
   at: number;
-  source: "github" | "buzz";
+  source: Source;
+  /** #199: the platform an ingested event came from, for its badge. */
+  platform?: string;
   icon: RowIcon;
   actor: string;
   verb: string;
@@ -145,6 +154,23 @@ export function toRow(e: HistoryEvent, names: Names, q = ""): Row {
       url: e.url,
     };
   }
+  if (e.source === "ingest") {
+    // #199: agent-posted events. The kind is open, so it reads as the verb.
+    const name = e.repo?.split("/").pop();
+    return {
+      id,
+      at,
+      source: "ingest",
+      platform: e.platform ?? undefined,
+      icon: "other",
+      actor: e.actor ?? e.agentId ?? "Someone",
+      verb: `reported ${e.kind.replace(/_/g, " ")}`,
+      target: name ?? null,
+      snippet: snippet([e.title, e.body].filter(Boolean).join(" · "), q),
+      chips: [e.kind],
+      url: e.url,
+    };
+  }
   const [icon, verb] = GITHUB[e.kind] ?? ["other", githubVerb(e)];
   const number = e.data?.number;
   // The mockups name a repo without its owner: "example-app#42".
@@ -214,6 +240,8 @@ export function liveEvents(
     data: null,
     ingestedAt: new Date(0),
     hive: null,
+    platform: null,
+    agentId: null,
   };
   return [
     ...github.map((e) => ({ ...blank, ...e })),

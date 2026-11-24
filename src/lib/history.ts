@@ -30,6 +30,7 @@ import {
   costPoints,
   events,
   type HistoryEvent,
+  ingestTokens,
   type NewAgentEvent,
   type NewCostPoint,
   needsYouLog,
@@ -41,7 +42,14 @@ import {
 // connection. The history views (#41 to #47) read through listEvents and
 // historyStats.
 
-const schema = { events, costPoints, agentEvents, needsYouLog, settings };
+const schema = {
+  events,
+  costPoints,
+  agentEvents,
+  needsYouLog,
+  settings,
+  ingestTokens,
+};
 type Db = DbHandle<typeof schema>["db"];
 
 /** True when DATABASE_URL is set, so the history views and nav show. */
@@ -92,6 +100,8 @@ const HIVE_TABLES = [
   "channel_assignments",
   "project_agents",
   "registry_revisions",
+  // #199: NOT NULL and in the key, like the registry tables.
+  "ingest_tokens",
 ];
 
 /**
@@ -131,8 +141,12 @@ export type EventQuery = {
   since?: Date;
   /** Exclusive. */
   until?: Date;
-  source?: "github" | "buzz";
+  source?: "github" | "buzz" | "ingest";
   kinds?: string[];
+  /** #199: ingested events from any of these platforms. */
+  platforms?: string[];
+  /** #199: ingested events from any of these platform agent ids. */
+  agentIds?: string[];
   repo?: string;
   /** Any of these actors: an agent's name and its pubkeys. */
   actors?: string[];
@@ -174,6 +188,8 @@ const COLS = {
   repo: events.repo,
   actor: events.actor,
   channel: events.channel,
+  platform: events.platform,
+  agentId: events.agentId,
 };
 
 // Every filter in `q` as one condition; limit is not a filter.
@@ -186,6 +202,8 @@ function matching(q: EventQuery): SQL | undefined {
       repo: q.repo,
       actor: q.actors && { in: q.actors },
       channel: q.channel,
+      platform: q.platforms && { in: q.platforms },
+      agentId: q.agentIds && { in: q.agentIds },
     }).filter(([, v]) => v !== undefined),
   );
   // where() keeps undefined operator values, so drop them per column.

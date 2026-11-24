@@ -7,6 +7,8 @@ import { z } from "zod";
 // hash is stored.
 
 export const TOKEN_PREFIX = "hive_otel_";
+/** The event ingest tokens (#199), one per platform. */
+export const EVENT_TOKEN_PREFIX = "hive_evt_";
 
 export const TokenRecordSchema = z.object({
   hash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -15,11 +17,12 @@ export const TokenRecordSchema = z.object({
 });
 export type TokenRecord = z.infer<typeof TokenRecordSchema>;
 
-const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+export const sha256 = (s: string) =>
+  createHash("sha256").update(s).digest("hex");
 
 /** A fresh token and the record to store for it. */
-export function newIngestToken(now = new Date()) {
-  const token = TOKEN_PREFIX + randomBytes(24).toString("base64url");
+export function newIngestToken(now = new Date(), prefix = TOKEN_PREFIX) {
+  const token = prefix + randomBytes(24).toString("base64url");
   const record: TokenRecord = {
     hash: sha256(token),
     last4: token.slice(-4),
@@ -45,5 +48,7 @@ export function checkIngestToken(
 }
 
 /** The masked form for the page: hive_otel_••••••••••••••7k2q. */
-export const maskToken = (r: TokenRecord) =>
-  `${TOKEN_PREFIX}${"•".repeat(14)}${r.last4}`;
+export const maskToken = (
+  r: Pick<TokenRecord, "last4">,
+  prefix = TOKEN_PREFIX,
+) => `${prefix}${"•".repeat(14)}${r.last4}`;

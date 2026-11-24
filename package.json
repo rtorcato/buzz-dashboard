@@ -20,6 +20,7 @@
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@noble/curves": "^2.4.0",
+    "@rtorcato/api-common": "^1.0.0",
     "@rtorcato/browser-common": "^3.0.0",
     "@rtorcato/db-common": "^1.5.0",
     "@rtorcato/db-drizzle": "^0.1.0",

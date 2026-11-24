@@ -12,8 +12,8 @@ import { setupOpen } from "./lib/setup";
 // route, so a new view can't forget it. Off by default.
 
 // Reachable signed out: the sign-in page and its API, the liveness check,
-// and OTLP ingest, which has its own bearer token (#42).
-const PUBLIC = /^\/(sign-in$|api\/auth\/|api\/health$|otlp\/)/;
+// and OTLP and event ingest, which have their own bearer tokens (#42, #199).
+const PUBLIC = /^\/(sign-in$|api\/auth\/|api\/health$|otlp\/|api\/events$)/;
 
 // While setup is open (#73) nothing else works: the env is incomplete. Once
 // it is closed, /setup is gone for good.

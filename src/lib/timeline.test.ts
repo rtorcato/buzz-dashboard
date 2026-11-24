@@ -28,6 +28,8 @@ const event = (e: Partial<HistoryEvent>): HistoryEvent => ({
   url: null,
   body: null,
   data: null,
+  platform: null,
+  agentId: null,
   ingestedAt: new Date(),
   hive: null,
   ...e,
@@ -49,10 +51,17 @@ describe("parseFilters", () => {
       agent: null,
       source: "buzz",
       type: "prs",
+      kind: null,
       range: "30d",
     });
     const junk = parseFilters({ source: "gitlab", type: "x", range: "1y" });
     expect([junk.source, junk.type, junk.range]).toEqual([null, null, "14d"]);
+  });
+
+  it("takes the ingest source and a well-formed kind (#199)", () => {
+    const f = parseFilters({ source: "ingest", kind: "failed_turn" });
+    expect([f.source, f.kind]).toEqual(["ingest", "failed_turn"]);
+    expect(parseFilters({ kind: "Drop Table" }).kind).toBeNull();
   });
 });
 
@@ -84,6 +93,35 @@ describe("splitMatches", () => {
 });
 
 describe("toRow", () => {
+  it("shows an ingested event with its platform and kind (#199)", () => {
+    const row = toRow(
+      event({
+        source: "ingest",
+        sourceId: "claude-code:t1",
+        kind: "failed_turn",
+        platform: "claude-code",
+        agentId: "sess-1",
+        actor: "Shockwave",
+        repo: "rtorcato/buzz-dashboard",
+        title: "Turn failed",
+        body: "max_tokens",
+        url: "https://github.com/o/r/pull/1",
+      }),
+      names,
+    );
+    expect(row).toMatchObject({
+      id: "ingest:claude-code:t1",
+      source: "ingest",
+      platform: "claude-code",
+      actor: "Shockwave",
+      verb: "reported failed turn",
+      target: "buzz-dashboard",
+      snippet: "Turn failed · max_tokens",
+      chips: ["failed_turn"],
+      url: "https://github.com/o/r/pull/1",
+    });
+  });
+
   it("builds a GitHub PR row", () => {
     const row = toRow(
       event({

@@ -50,6 +50,13 @@
       "when": 1795202769199,
       "tag": "0006_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795522759862,
+      "tag": "0007_event_ingest",
+      "breakpoints": true
     }
   ]
 }
